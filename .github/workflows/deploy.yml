@@ -1,0 +1,182 @@
+name: Automated Public Release Generation
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  release_pipeline:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Crucial: Gives the cloud runner permission to create a public release
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Set up JDK 21
+      uses: actions/setup-java@v4
+      with:
+        java-version: '21'
+        distribution: 'zulu'
+
+    - name: Set up Gradle
+      uses: gradle/actions/setup-gradle@v4
+      with:
+        gradle-version: '9.3.1'
+        validate-wrappers: false
+
+    - name: Regenerate Gradle Wrapper
+      run: gradle wrapper --gradle-version 9.3.1
+
+    - name: Grant Execute Permission for Gradle
+      run: chmod +x gradlew
+
+    - name: Decode Keystore
+      env:
+        KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 || secrets.DEBUG_KEYSTORE_BASE64 }}
+      shell: python
+      run: |
+        import base64
+        import os
+        import sys
+
+        # First, try to get the keystore from the environment variable (GitHub Secrets)
+        keystore_b64 = os.environ.get("KEYSTORE_BASE64", "").strip()
+
+        if keystore_b64:
+            print("Found keystore base64 in environment variables (GitHub Secrets).")
+        else:
+            print("KEYSTORE_BASE64 environment variable is empty. Checking for checked-in debug.keystore.base64.")
+            if os.path.exists("debug.keystore.base64"):
+                with open("debug.keystore.base64", "r") as f:
+                    keystore_b64 = f.read().strip()
+                print("Found checked-in debug.keystore.base64 file.")
+            else:
+                print("Error: Keystore not found in environment variables AND debug.keystore.base64 not found on disk.")
+                sys.exit(1)
+
+        if keystore_b64:
+            valid_chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/="
+            # Replace characters from url-safe base64 just in case
+            cleaned_b64 = keystore_b64.replace("_", "/").replace("-", "+")
+            cleaned_b64 = "".join(c for c in cleaned_b64 if c in valid_chars)
+            padded_b64 = cleaned_b64 + "=" * (-len(cleaned_b64) % 4)
+            try:
+                decoded_bytes = base64.b64decode(padded_b64)
+                with open("debug.keystore", "wb") as f:
+                    f.write(decoded_bytes)
+                print("Successfully decoded and wrote debug.keystore.")
+            except Exception as e:
+                print(f"Error decoding keystore: {e}")
+                sys.exit(1)
+        else:
+            print("Error: Keystore base64 content is empty.")
+            sys.exit(1)
+
+    - name: Get Version Info
+      id: get_version
+      run: |
+        LOCAL_CODE=$(grep -E 'versionCode\s*=\s*customCode\s*\?\:\s*[0-9]+' app/build.gradle.kts | sed -E 's/.*versionCode\s*=\s*customCode\s*\?\:\s*([0-9]+).*/\1/')
+        if [ -z "$LOCAL_CODE" ] || ! [[ "$LOCAL_CODE" =~ ^[0-9]+$ ]]; then
+          LOCAL_CODE=7
+        fi
+        
+        echo "Local fallback versionCode is $LOCAL_CODE"
+        
+        # Query Firebase Realtime Database for the last successful build's version code
+        DB_VAL=$(curl -s "https://collection-app-2007-default-rtdb.asia-southeast1.firebasedatabase.app/versionId.json" | tr -d '"')
+        echo "Firebase DB versionId is: $DB_VAL"
+        if [ "$DB_VAL" = "null" ]; then
+          DB_VAL=""
+        fi
+        
+        NEW_VERSION_CODE=""
+        
+        if [ -n "$DB_VAL" ] && [[ "$DB_VAL" =~ ^[0-9]+$ ]]; then
+          NEW_VERSION_CODE=$((DB_VAL + 1))
+          echo "Determined version code from Firebase DB: $NEW_VERSION_CODE"
+        else
+          echo "Firebase DB fetch was invalid or empty. Trying GitHub Releases latest tag..."
+          # Fetch latest release tag from GitHub API
+          GH_TAG=$(curl -s "https://api.github.com/repos/${{ github.repository }}/releases/latest" | grep -oP '"tag_name": "\s*v1.0.\K[0-9]+')
+          if [ -n "$GH_TAG" ] && [[ "$GH_TAG" =~ ^[0-9]+$ ]]; then
+            NEW_VERSION_CODE=$((GH_TAG + 1))
+            echo "Determined version code from GitHub latest release: $NEW_VERSION_CODE"
+          else
+            NEW_VERSION_CODE=$((LOCAL_CODE + 1))
+            echo "Fallback to incremented local code: $NEW_VERSION_CODE"
+          fi
+        fi
+        
+        NEW_VERSION_NAME="${NEW_VERSION_CODE}.0"
+        
+        echo "Final VERSION_CODE: $NEW_VERSION_CODE"
+        echo "Final VERSION_NAME: $NEW_VERSION_NAME"
+        
+        echo "VERSION_CODE=$NEW_VERSION_CODE" >> $GITHUB_ENV
+        echo "VERSION_NAME=$NEW_VERSION_NAME" >> $GITHUB_ENV
+        echo "version_code=$NEW_VERSION_CODE" >> $GITHUB_OUTPUT
+        echo "version_name=$NEW_VERSION_NAME" >> $GITHUB_OUTPUT
+
+    # We compile the automated release APK using the dynamically determined versionCode and versionName
+    - name: Compile Automated Release APK
+      env:
+        RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS || secrets.KEY_ALIAS || secrets.SIGNING_KEY_ALIAS }}
+        RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD || secrets.KEY_PASSWORD || secrets.SIGNING_KEY_PASSWORD }}
+        RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD || secrets.STORE_PASSWORD || secrets.SIGNING_STORE_PASSWORD }}
+        RELEASE_STORE_TYPE: ${{ secrets.RELEASE_STORE_TYPE || secrets.STORE_TYPE || secrets.SIGNING_STORE_TYPE }}
+      run: ./gradlew assembleRelease -PcustomVersionCode=${{ env.VERSION_CODE }} -PcustomVersionName="${{ env.VERSION_NAME }}"
+
+    - name: Distribute Release APK to Firebase App Distribution
+      continue-on-error: true
+      env:
+        FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_CREDENTIALS }}
+        FIREBASE_APP_ID: ${{ secrets.FIREBASE_APP_ID }}
+        FIREBASE_GROUPS: ${{ secrets.FIREBASE_GROUPS }}
+        FIREBASE_TESTERS: ${{ secrets.FIREBASE_TESTERS }}
+      if: env.FIREBASE_SERVICE_ACCOUNT != '' && env.FIREBASE_APP_ID != ''
+      run: |
+        echo "$FIREBASE_SERVICE_ACCOUNT" > firebase-key.json
+        export GOOGLE_APPLICATION_CREDENTIALS=firebase-key.json
+        
+        CMD="npx firebase-tools appdistribution:distribute app/build/outputs/apk/release/app-release.apk --app \"$FIREBASE_APP_ID\""
+        CMD="$CMD --release-notes \"Automated release build #${{ github.run_number }} (Version Code: ${{ env.VERSION_CODE }}) uploaded via GitHub Actions.\""
+        
+        GROUPS_TO_USE="${FIREBASE_GROUPS:-testers}"
+        CMD="$CMD --groups \"$GROUPS_TO_USE\""
+        if [ -n "$FIREBASE_TESTERS" ]; then
+          CMD="$CMD --testers \"$FIREBASE_TESTERS\""
+        fi
+        
+        eval $CMD
+        rm -f firebase-key.json
+
+    - name: Generate Public GitHub Release
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: v1.0.${{ env.VERSION_CODE }}
+        name: Release v1.0.${{ env.VERSION_CODE }}
+        body: |
+          Automated build updates compiled successfully via GitHub Actions.
+          Tracking Identifier: Build #${{ github.run_number }} (Version Code: ${{ env.VERSION_CODE }}, Version Name: ${{ env.VERSION_NAME }})
+        files: app/build/outputs/apk/release/app-release.apk
+
+    - name: Update Firebase Realtime Database Update Config
+      run: |
+        VERSION_CODE=${{ env.VERSION_CODE }}
+        REPO_NAME="${{ github.repository }}"
+        APK_URL="https://github.com/${REPO_NAME}/releases/download/v1.0.$VERSION_CODE/app-release.apk"
+        
+        OWNER=$(echo "$REPO_NAME" | cut -d'/' -f1)
+        REPO=$(echo "$REPO_NAME" | cut -d'/' -f2)
+        
+        # Update update_config.json
+        curl -X PUT -H "Content-Type: application/json" \
+          -d "{\"versionId\": $VERSION_CODE, \"apkFileId\": \"$APK_URL\", \"githubOwner\": \"$OWNER\", \"githubRepo\": \"$REPO\"}" \
+          "https://collection-app-2007-default-rtdb.asia-southeast1.firebasedatabase.app/update_config.json"
+          
+        # Update versionId.json
+        curl -X PUT -H "Content-Type: application/json" \
+          -d "$VERSION_CODE" \
+          "https://collection-app-2007-default-rtdb.asia-southeast1.firebasedatabase.app/versionId.json"

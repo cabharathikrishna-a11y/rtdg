@@ -1,0 +1,32 @@
+<resources>
+    <string name="add">Ajouter</string>
+    <string name="add_customer">Ajouter un client</string>
+    <string name="app_font_size_option">Taille de police</string>
+    <string name="cancel">Annuler</string>
+    <string name="collect_instalment">Encaisser l\'échéance</string>
+    <string name="collection_book">Livre de collectes</string>
+    <string name="customer_dashboard">Tableau de bord du client</string>
+    <string name="customer_profile">Profil du client</string>
+    <string name="edit_customer">Modifier le client</string>
+    <string name="friday">Vendredi</string>
+    <string name="google_drive_cloud_sync">Synchro Cloud</string>
+    <string name="home">Accueil</string>
+    <string name="last_cloud_sync">Dernière synchro:</string>
+    <string name="manage_collection_groups">Gérer les groupes</string>
+    <string name="monday">Lundi</string>
+    <string name="new_loan_cycle">Nouveau prêt</string>
+    <string name="outstanding_amt">Montant restant dû</string>
+    <string name="reports_and_registers">Rapports</string>
+    <string name="saturday">Samedi</string>
+    <string name="save">Enregistrer</string>
+    <string name="search_customer_by_name_or_phone">Rechercher...</string>
+    <string name="search_by_name_or_phone">Rechercher par nom ou téléphone...</string>
+    <string name="date_of_dispersal">Date de décaissement</string>
+    <string name="settings_screen">Paramètres</string>
+    <string name="sunday">Dimanche</string>
+    <string name="sync_now">Synchroniser</string>
+    <string name="thursday">Jeudi</string>
+    <string name="tuesday">Mardi</string>
+    <string name="wednesday">Mercredi</string>
+    <string name="welcome_muneeswaran">Bienvenue Muneeswaran</string>
+</resources>

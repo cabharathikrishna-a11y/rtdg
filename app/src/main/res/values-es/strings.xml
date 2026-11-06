@@ -1,0 +1,36 @@
+<resources>
+    <string name="active_accounts">Cuentas activas</string>
+    <string name="active_capital">Capital activo</string>
+    <string name="add">Añadir</string>
+    <string name="add_customer">Añadir cliente</string>
+    <string name="app_font_size_option">Tamaño de fuente</string>
+    <string name="cancel">Cancelar</string>
+    <string name="collect_instalment">Cobrar cuota</string>
+    <string name="collection_book">Libro de cobros</string>
+    <string name="customer_dashboard">Panel del cliente</string>
+    <string name="customer_profile">Perfil del cliente</string>
+    <string name="daily_ledger_history">Historial diario</string>
+    <string name="edit_customer">Editar cliente</string>
+    <string name="friday">Viernes</string>
+    <string name="google_drive_cloud_sync">Sincronización en la nube</string>
+    <string name="home">Inicio</string>
+    <string name="last_cloud_sync">Última sincronización:</string>
+    <string name="manage_collection_groups">Gestionar grupos de cobro</string>
+    <string name="monday">Lunes</string>
+    <string name="new_loan_cycle">Nuevo ciclo de préstamo</string>
+    <string name="outstanding_amt">Monto pendiente</string>
+    <string name="reports_and_registers">Informes y registros</string>
+    <string name="saturday">Sábado</string>
+    <string name="save">Guardar</string>
+    <string name="search_customer_by_name_or_phone">Buscar por nombre o teléfono...</string>
+    <string name="search_by_name_or_phone">Buscar por nombre o teléfono...</string>
+    <string name="date_of_dispersal">Fecha de desembolso</string>
+    <string name="settings_screen">Configuración</string>
+    <string name="settled_accounts">Cuentas pagadas</string>
+    <string name="sunday">Domingo</string>
+    <string name="sync_now">Sincronizar ahora</string>
+    <string name="thursday">Jueves</string>
+    <string name="tuesday">Martes</string>
+    <string name="wednesday">Miércoles</string>
+    <string name="welcome_muneeswaran">Bienvenido Muneeswaran</string>
+</resources>

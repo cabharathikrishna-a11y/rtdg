@@ -1,0 +1,33 @@
+# Gradle files and build outputs
+.gradle/
+build/
+app/build/
+.build-outputs/
+app/build-outputs/
+build-outputs/
+
+# Local configuration
+local.properties
+.env
+.env.local
+
+# Log files
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+*.bak
+*.tmp
+
+# IDE / Android Studio files
+.idea/
+*.iml
+.navigation/
+captures/
+.externalNativeBuild/
+.cxx/
+local.properties
+
+# Keep debug keystores since they are used for local debug signing
+# but ensure we don't upload actual production release keys
