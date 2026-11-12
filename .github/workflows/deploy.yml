@@ -1,8 +1,9 @@
-name: Automated Public Release Generation
+name: Automated Public Release & Firebase App Distribution
 
 on:
   push:
     branches: [ main ]
+  workflow_dispatch:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -35,7 +36,7 @@ jobs:
     - name: Grant Execute Permission for Gradle
       run: chmod +x gradlew
 
-    - name: Decode Keystore
+    - name: Decode Keystore & Resolve Firebase Config
       env:
         KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 || secrets.DEBUG_KEYSTORE_BASE64 }}
         REPO_OWNER: ${{ github.repository_owner }}
@@ -131,6 +132,11 @@ jobs:
 
         # 3. Fetch google-services.json from Secrets repo and ensure current applicationId is registered
         gs_content = fetch_from_secrets_repo("google-services.json")
+        if not gs_content and os.path.exists("app/google-services.json"):
+            with open("app/google-services.json", "r", encoding="utf-8", errors="ignore") as f:
+                gs_content = f.read()
+
+        detected_firebase_app_id = ""
         if gs_content:
             try:
                 gs_json = json.loads(gs_content)
@@ -141,35 +147,53 @@ jobs:
                         if m:
                             app_id = m.group(1)
                 clients = gs_json.get("client", [])
-                if app_id and isinstance(clients, list) and len(clients) > 0:
-                    has_pkg = any(
-                        c.get("client_info", {}).get("android_client_info", {}).get("package_name") == app_id
-                        for c in clients if isinstance(c, dict)
-                    )
-                    if not has_pkg:
-                        cloned_client = json.loads(json.dumps(clients[0]))
-                        cloned_client.setdefault("client_info", {}).setdefault("android_client_info", {})["package_name"] = app_id
-                        clients.append(cloned_client)
-                        gs_json["client"] = clients
-                        print(f"Added package_name '{app_id}' to google-services.json clients.")
+                if isinstance(clients, list) and len(clients) > 0:
+                    # Extract mobilesdk_app_id from matching client or first client
+                    for c in clients:
+                        if isinstance(c, dict):
+                            pkg = c.get("client_info", {}).get("android_client_info", {}).get("package_name")
+                            mob_id = c.get("client_info", {}).get("mobilesdk_app_id", "")
+                            if mob_id and (pkg == app_id or not detected_firebase_app_id):
+                                detected_firebase_app_id = mob_id
+                    if app_id:
+                        has_pkg = any(
+                            c.get("client_info", {}).get("android_client_info", {}).get("package_name") == app_id
+                            for c in clients if isinstance(c, dict)
+                        )
+                        if not has_pkg:
+                            cloned_client = json.loads(json.dumps(clients[0]))
+                            cloned_client.setdefault("client_info", {}).setdefault("android_client_info", {})["package_name"] = app_id
+                            clients.append(cloned_client)
+                            gs_json["client"] = clients
+                            print(f"Added package_name '{app_id}' to google-services.json clients.")
                 os.makedirs("app", exist_ok=True)
                 with open("app/google-services.json", "w", encoding="utf-8") as f:
                     json.dump(gs_json, f, indent=2)
-                print("Updated app/google-services.json from Secrets repository.")
+                print("Verified app/google-services.json.")
             except Exception as e:
                 print(f"Warning updating google-services.json: {e}")
 
-        # 4. Fetch FIREBASE_APP_ID and FIREBASE_CREDENTIALS from Secrets repo as fallback
+        # 4. Resolve FIREBASE_APP_ID, FIREBASE_CREDENTIALS, and FIREBASE_TOKEN from Secrets repo / google-services.json
         github_env_path = os.environ.get("GITHUB_ENV", "")
         if github_env_path:
             fb_app_id = fetch_from_secrets_repo("FIREBASE_APP_ID")
-            if fb_app_id:
+            final_app_id = (fb_app_id.splitlines()[0].strip() if fb_app_id else "") or detected_firebase_app_id or "1:455008013486:android:531e28ee052201e9a5f13f"
+            with open(github_env_path, "a", encoding="utf-8") as envf:
+                envf.write(f"FALLBACK_FIREBASE_APP_ID={final_app_id}\n")
+            print(f"Resolved Firebase App ID: {final_app_id}")
+
+            for cred_name in ["FIREBASE_CREDENTIALS", "FIREBASE_SERVICE_ACCOUNT", "service-account.json", "firebase-adminsdk.json"]:
+                fb_creds = fetch_from_secrets_repo(cred_name)
+                if fb_creds:
+                    with open("firebase-secrets-repo-key.json", "w", encoding="utf-8") as cf:
+                        cf.write(fb_creds)
+                    print(f"Loaded Firebase service account credentials from {cred_name}.")
+                    break
+
+            fb_token = fetch_from_secrets_repo("FIREBASE_TOKEN")
+            if fb_token:
                 with open(github_env_path, "a", encoding="utf-8") as envf:
-                    envf.write(f"FALLBACK_FIREBASE_APP_ID={fb_app_id.splitlines()[0].strip()}\n")
-            fb_creds = fetch_from_secrets_repo("FIREBASE_CREDENTIALS")
-            if fb_creds:
-                with open("firebase-secrets-repo-key.json", "w", encoding="utf-8") as cf:
-                    cf.write(fb_creds)
+                    envf.write(f"FALLBACK_FIREBASE_TOKEN={fb_token.splitlines()[0].strip()}\n")
 
     - name: Get Version Info
       id: get_version
@@ -216,7 +240,7 @@ jobs:
         echo "version_code=$NEW_VERSION_CODE" >> $GITHUB_OUTPUT
         echo "version_name=$NEW_VERSION_NAME" >> $GITHUB_OUTPUT
 
-    # We compile the automated release APK using the dynamically determined versionCode and versionName
+    # Compile the automated release APK using the dynamically determined versionCode and versionName
     - name: Compile Automated Release APK
       env:
         RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS || secrets.KEY_ALIAS || secrets.SIGNING_KEY_ALIAS }}
@@ -225,39 +249,7 @@ jobs:
         RELEASE_STORE_TYPE: ${{ secrets.RELEASE_STORE_TYPE || secrets.STORE_TYPE || secrets.SIGNING_STORE_TYPE }}
       run: ./gradlew assembleRelease -PcustomVersionCode=${{ env.VERSION_CODE }} -PcustomVersionName="${{ env.VERSION_NAME }}"
 
-    - name: Distribute Release APK to Firebase App Distribution
-      continue-on-error: true
-      env:
-        FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_CREDENTIALS }}
-        FIREBASE_APP_ID: ${{ secrets.FIREBASE_APP_ID || env.FALLBACK_FIREBASE_APP_ID }}
-        FIREBASE_GROUPS: ${{ secrets.FIREBASE_GROUPS }}
-        FIREBASE_TESTERS: ${{ secrets.FIREBASE_TESTERS }}
-      run: |
-        if [ -n "$FIREBASE_SERVICE_ACCOUNT" ]; then
-          echo "$FIREBASE_SERVICE_ACCOUNT" > firebase-key.json
-        elif [ -f "firebase-secrets-repo-key.json" ]; then
-          cp firebase-secrets-repo-key.json firebase-key.json
-        fi
-        
-        if [ ! -f "firebase-key.json" ] || [ -z "$FIREBASE_APP_ID" ]; then
-          echo "Firebase credentials or App ID not configured; skipping Firebase App Distribution."
-          exit 0
-        fi
-        
-        export GOOGLE_APPLICATION_CREDENTIALS=firebase-key.json
-        
-        CMD="npx firebase-tools appdistribution:distribute app/build/outputs/apk/release/app-release.apk --app \"$FIREBASE_APP_ID\""
-        CMD="$CMD --release-notes \"Automated release build #${{ github.run_number }} (Version Code: ${{ env.VERSION_CODE }}) uploaded via GitHub Actions.\""
-        
-        GROUPS_TO_USE="${FIREBASE_GROUPS:-testers}"
-        CMD="$CMD --groups \"$GROUPS_TO_USE\""
-        if [ -n "$FIREBASE_TESTERS" ]; then
-          CMD="$CMD --testers \"$FIREBASE_TESTERS\""
-        fi
-        
-        eval $CMD
-        rm -f firebase-key.json firebase-secrets-repo-key.json
-
+    # 1. First create the Public GitHub Release and upload the compiled APK
     - name: Generate Public GitHub Release
       uses: softprops/action-gh-release@v2
       with:
@@ -268,6 +260,7 @@ jobs:
           Tracking Identifier: Build #${{ github.run_number }} (Version Code: ${{ env.VERSION_CODE }}, Version Name: ${{ env.VERSION_NAME }})
         files: app/build/outputs/apk/release/app-release.apk
 
+    # 2. Update Firebase Realtime Database Update Config with the new Public Release APK URL
     - name: Update Firebase Realtime Database Update Config
       run: |
         VERSION_CODE=${{ env.VERSION_CODE }}
@@ -279,10 +272,79 @@ jobs:
         
         # Update update_config.json
         curl -X PUT -H "Content-Type: application/json" \
-          -d "{\"versionId\": $VERSION_CODE, \"apkFileId\": \"$APK_URL\", \"githubOwner\": \"$OWNER\", \"githubRepo\": \"$REPO\"}" \
+          -d "{\"versionId\": $VERSION_CODE, \"versionName\": \"1.0.$VERSION_CODE\", \"apkFileId\": \"$APK_URL\", \"githubOwner\": \"$OWNER\", \"githubRepo\": \"$REPO\"}" \
           "https://collection-app-2007-default-rtdb.asia-southeast1.firebasedatabase.app/update_config.json"
           
         # Update versionId.json
         curl -X PUT -H "Content-Type: application/json" \
           -d "$VERSION_CODE" \
           "https://collection-app-2007-default-rtdb.asia-southeast1.firebasedatabase.app/versionId.json"
+
+    # 3. After Public GitHub Release, upload and release the APK in Firebase App Distribution Center
+    - name: Upload & Release APK in Firebase App Distribution Center
+      continue-on-error: true
+      env:
+        FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_CREDENTIALS || secrets.FIREBASE_SERVICE_ACCOUNT }}
+        FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN || env.FALLBACK_FIREBASE_TOKEN }}
+        FIREBASE_APP_ID: ${{ secrets.FIREBASE_APP_ID || env.FALLBACK_FIREBASE_APP_ID || '1:455008013486:android:531e28ee052201e9a5f13f' }}
+        FIREBASE_GROUPS: ${{ secrets.FIREBASE_GROUPS }}
+        FIREBASE_TESTERS: ${{ secrets.FIREBASE_TESTERS }}
+      run: |
+        APK_PATH="app/build/outputs/apk/release/app-release.apk"
+        if [ ! -f "$APK_PATH" ]; then
+          echo "Release APK not found at $APK_PATH"
+          exit 1
+        fi
+
+        if [ -n "$FIREBASE_SERVICE_ACCOUNT" ]; then
+          echo "$FIREBASE_SERVICE_ACCOUNT" > firebase-key.json
+        elif [ -f "firebase-secrets-repo-key.json" ]; then
+          cp firebase-secrets-repo-key.json firebase-key.json
+        fi
+
+        # Validate if firebase-key.json is base64 encoded or raw JSON
+        if [ -f "firebase-key.json" ]; then
+          python3 - << 'EOF'
+        import base64, json
+        with open("firebase-key.json", "r", encoding="utf-8", errors="ignore") as f:
+            raw = f.read().strip()
+        if raw and not raw.startswith("{"):
+            try:
+                decoded = base64.b64decode(raw).decode("utf-8")
+                if decoded.strip().startswith("{"):
+                    with open("firebase-key.json", "w", encoding="utf-8") as out:
+                        out.write(decoded)
+                    print("Decoded base64 FIREBASE_CREDENTIALS into JSON key.")
+            except Exception as e:
+                print(f"Note checking base64 service account: {e}")
+        EOF
+        fi
+
+        RELEASE_NOTES="Public Release v1.0.${{ env.VERSION_CODE }} (Build #${{ github.run_number }}). Uploaded automatically after GitHub Public Release."
+        TOKEN_ARGS=""
+
+        if [ -f "firebase-key.json" ] && grep -q '"private_key"' firebase-key.json; then
+          export GOOGLE_APPLICATION_CREDENTIALS="$(pwd)/firebase-key.json"
+          echo "Using Service Account credentials (GOOGLE_APPLICATION_CREDENTIALS) for Firebase App Distribution."
+        elif [ -n "$FIREBASE_TOKEN" ]; then
+          TOKEN_ARGS="--token \"$FIREBASE_TOKEN\""
+          echo "Using FIREBASE_TOKEN for Firebase App Distribution."
+        else
+          echo "::warning::Neither FIREBASE_CREDENTIALS service account JSON nor FIREBASE_TOKEN was found in GitHub Secrets or Secrets repo. Add FIREBASE_CREDENTIALS or FIREBASE_TOKEN to enable Firebase App Distribution uploads."
+          exit 0
+        fi
+
+        GROUPS_TO_USE="${FIREBASE_GROUPS:-testers}"
+        TESTERS_TO_USE="${FIREBASE_TESTERS}"
+
+        echo "Uploading APK to Firebase App Distribution (App ID: $FIREBASE_APP_ID)..."
+        DIST_CMD="npx -y firebase-tools@latest appdistribution:distribute \"$APK_PATH\" --app \"$FIREBASE_APP_ID\" --release-notes \"$RELEASE_NOTES\" $TOKEN_ARGS"
+
+        # Try distributing with groups/testers first; if the group or tester doesn't exist yet in Firebase Console, fall back to uploading the release directly so it still appears in Firebase App Distribution Center!
+        if [ -n "$TESTERS_TO_USE" ]; then
+          eval "$DIST_CMD --groups \"$GROUPS_TO_USE\" --testers \"$TESTERS_TO_USE\"" || eval "$DIST_CMD --testers \"$TESTERS_TO_USE\"" || eval "$DIST_CMD"
+        else
+          eval "$DIST_CMD --groups \"$GROUPS_TO_USE\"" || eval "$DIST_CMD"
+        fi
+
+        rm -f firebase-key.json firebase-secrets-repo-key.json

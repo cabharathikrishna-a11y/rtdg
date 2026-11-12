@@ -87,6 +87,9 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
     var editingPaymentTarget by remember { mutableStateOf<WeeklyPayment?>(null) }
     var todayPaymentsListTarget by remember { mutableStateOf<List<WeeklyPayment>?>(null) }
     var deletingPaymentTarget by remember { mutableStateOf<WeeklyPayment?>(null) }
+    var confirmEditDisbursementTarget by remember { mutableStateOf<LoanCycle?>(null) }
+    var editingDisbursementTarget by remember { mutableStateOf<LoanCycle?>(null) }
+    var deletingDisbursementTarget by remember { mutableStateOf<LoanCycle?>(null) }
 
     if (linkingPayment != null) {
         val payment = linkingPayment!!
@@ -539,6 +542,7 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                         HomePerformanceDashboard(
                             allPayments = allPayments,
                             allLoanCycles = allLoanCycles,
+                            collectionGroups = collectionGroups,
                             language = language,
                             appColors = appColors,
                             onViewMoreClicked = { viewModel.navigateTo(Screen.FullLedgerHistory) }
@@ -713,53 +717,58 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                                 }
                             }
 
-                            CustomerOverviewCard(
-                                item = item,
-                                displayIndex = item.originalGroupIndex,
-                                viewModel = viewModel,
-                                language = language,
-                                activeDay = currentDayVal,
-                                fontSizeScale = fontSizeScale,
-                                showReorder = (currentDayVal != "Home" && customerSortMode == "ROUTE"),
-                                onCardClicked = { viewModel.navigateTo(Screen.CustomerDetail(item.customer.id)) },
-                                onMoveUp = { viewModel.moveCustomerUp(item) },
-                                onMoveDown = { viewModel.moveCustomerDown(item) },
-                                onReceiveClicked = { viewModel.navigateTo(Screen.RecordPayment(it)) },
-                                onAddLoanClicked = { viewModel.navigateTo(Screen.AddLoan(item.customer.id)) },
-                                onIndexClicked = {
-                                    customerToReorder = item
-                                    inputPositionText = item.originalGroupIndex.toString()
-                                },
-                                isScrolling = scrollState.isScrollInProgress || !hasPaymentInPast2Days, // Trigger attention checklist shaker animation
-                                hasPaymentInPast2Days = hasPaymentInPast2Days,
-                                onEditPaymentClicked = { activeLoanId ->
-                                    val tCal = Calendar.getInstance().apply {
-                                        set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
-                                    }
-                                    val startOfToday = tCal.timeInMillis
-                                    val startOfYesterday = startOfToday - java.util.concurrent.TimeUnit.DAYS.toMillis(1)
+                            AnimatedSlideInItem(index = index) {
+                                CustomerOverviewCard(
+                                    item = item,
+                                    displayIndex = item.originalGroupIndex,
+                                    viewModel = viewModel,
+                                    language = language,
+                                    activeDay = currentDayVal,
+                                    fontSizeScale = fontSizeScale,
+                                    showReorder = (currentDayVal != "Home" && customerSortMode == "ROUTE"),
+                                    onCardClicked = { viewModel.navigateTo(Screen.CustomerDetail(item.customer.id)) },
+                                    onMoveUp = { viewModel.moveCustomerUp(item) },
+                                    onMoveDown = { viewModel.moveCustomerDown(item) },
+                                    onReceiveClicked = { viewModel.navigateTo(Screen.RecordPayment(it)) },
+                                    onAddLoanClicked = { viewModel.navigateTo(Screen.AddLoan(item.customer.id)) },
+                                    onIndexClicked = {
+                                        customerToReorder = item
+                                        inputPositionText = item.originalGroupIndex.toString()
+                                    },
+                                    isScrolling = scrollState.isScrollInProgress || !hasPaymentInPast2Days, // Trigger attention checklist shaker animation
+                                    hasPaymentInPast2Days = hasPaymentInPast2Days,
+                                    onEditPaymentClicked = { activeLoanId ->
+                                        val tCal = Calendar.getInstance().apply {
+                                            set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+                                        }
+                                        val startOfToday = tCal.timeInMillis
+                                        val startOfYesterday = startOfToday - java.util.concurrent.TimeUnit.DAYS.toMillis(1)
 
-                                    val todayEntries = allPayments.filter { 
-                                        it.loanCycleId == activeLoanId && it.paymentDate >= startOfToday && it.status.uppercase() != "DELETED" 
-                                    }.sortedByDescending { it.paymentDate }
-
-                                    if (todayEntries.size > 1) {
-                                        todayPaymentsListTarget = todayEntries
-                                    } else if (todayEntries.size == 1) {
-                                        confirmEditPaymentTarget = todayEntries.first()
-                                    } else {
-                                        val recentEntries = allPayments.filter { 
-                                            it.loanCycleId == activeLoanId && it.paymentDate >= startOfYesterday && it.status.uppercase() != "DELETED" 
+                                        val todayEntries = allPayments.filter { 
+                                            it.loanCycleId == activeLoanId && it.paymentDate >= startOfToday && it.status.uppercase() != "DELETED" 
                                         }.sortedByDescending { it.paymentDate }
 
-                                        if (recentEntries.size > 1) {
-                                            todayPaymentsListTarget = recentEntries
-                                        } else if (recentEntries.isNotEmpty()) {
-                                            confirmEditPaymentTarget = recentEntries.first()
+                                        if (todayEntries.size > 1) {
+                                            todayPaymentsListTarget = todayEntries
+                                        } else if (todayEntries.size == 1) {
+                                            confirmEditPaymentTarget = todayEntries.first()
+                                        } else {
+                                            val recentEntries = allPayments.filter { 
+                                                it.loanCycleId == activeLoanId && it.paymentDate >= startOfYesterday && it.status.uppercase() != "DELETED" 
+                                            }.sortedByDescending { it.paymentDate }
+
+                                            if (recentEntries.size > 1) {
+                                                todayPaymentsListTarget = recentEntries
+                                            } else if (recentEntries.isNotEmpty()) {
+                                                confirmEditPaymentTarget = recentEntries.first()
+                                            }
                                         }
+                                    },
+                                    onEditDisbursementClicked = { loanCycle ->
+                                        confirmEditDisbursementTarget = loanCycle
                                     }
-                                }
-                            )
+                                )
+                            }
                         }
                     }
                 }
@@ -768,11 +777,22 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
                 }
             }
 
-            if (currentDayVal != "Home" && scrollState.firstVisibleItemIndex > 5) {
+            androidx.compose.animation.AnimatedVisibility(
+                visible = currentDayVal != "Home" && scrollState.firstVisibleItemIndex >= 8,
+                enter = androidx.compose.animation.slideInVertically(
+                    initialOffsetY = { fullHeight -> fullHeight * 2 },
+                    animationSpec = tween(durationMillis = 340)
+                ) + androidx.compose.animation.fadeIn(animationSpec = tween(durationMillis = 240)),
+                exit = androidx.compose.animation.slideOutVertically(
+                    targetOffsetY = { fullHeight -> fullHeight * 2 },
+                    animationSpec = tween(durationMillis = 340)
+                ) + androidx.compose.animation.fadeOut(animationSpec = tween(durationMillis = 240)),
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(bottom = 76.dp, end = 16.dp)
+            ) {
                 Box(
                     modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(bottom = 76.dp, end = 16.dp)
                         .size(48.dp)
                         .background(appColors.primaryAccent, CircleShape)
                         .clickable {
@@ -1351,6 +1371,375 @@ fun DashboardScreen(viewModel: FinanceViewModel) {
             }
         )
     }
+
+    if (confirmEditDisbursementTarget != null) {
+        val targetLoan = confirmEditDisbursementTarget!!
+        AlertDialog(
+            onDismissRequest = { confirmEditDisbursementTarget = null },
+            containerColor = Color.White,
+            titleContentColor = Color.Black,
+            textContentColor = Color.Black,
+            title = {
+                Text(
+                    text = translate("Edit Disbursement Entry?", language),
+                    fontWeight = FontWeight.Bold,
+                    color = Color.Black
+                )
+            },
+            text = {
+                Text(
+                    text = "Do you want to edit or delete this disbursement entry of ₹${CurrencyFormatter.format(targetLoan.loanAmount + targetLoan.interestAmount)} (Principal: ₹${CurrencyFormatter.format(targetLoan.loanAmount)}, Interest: ₹${CurrencyFormatter.format(targetLoan.interestAmount)})?",
+                    color = Color.Black
+                )
+            },
+            confirmButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = {
+                            deletingDisbursementTarget = targetLoan
+                            confirmEditDisbursementTarget = null
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = ColorLossRed)
+                    ) {
+                        Text(translate("Delete", language), color = Color.White)
+                    }
+                    Button(
+                        onClick = {
+                            editingDisbursementTarget = targetLoan
+                            confirmEditDisbursementTarget = null
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = appColors.primaryAccent)
+                    ) {
+                        Text(translate("Edit", language), color = Color.White)
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmEditDisbursementTarget = null }) {
+                    Text(translate("Cancel", language), color = Color.DarkGray)
+                }
+            }
+        )
+    }
+
+    if (deletingDisbursementTarget != null) {
+        val loanToDel = deletingDisbursementTarget!!
+        AlertDialog(
+            onDismissRequest = { deletingDisbursementTarget = null },
+            containerColor = Color.White,
+            titleContentColor = Color.Black,
+            textContentColor = Color.Black,
+            title = { Text(translate("Delete Disbursement Entry?", language), fontWeight = FontWeight.Bold, color = Color.Black) },
+            text = { Text("Are you sure you want to delete this loan disbursement of ₹${CurrencyFormatter.format(loanToDel.loanAmount)}?", color = Color.Black) },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.deleteLoanCycle(loanToDel)
+                        deletingDisbursementTarget = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = ColorLossRed)
+                ) {
+                    Text(translate("Delete", language), color = Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { deletingDisbursementTarget = null }) {
+                    Text(translate("Cancel", language), color = Color.DarkGray)
+                }
+            }
+        )
+    }
+
+    if (editingDisbursementTarget != null) {
+        val loanEntry = editingDisbursementTarget!!
+        val sdfDisb = remember { SimpleDateFormat("dd/MM/yyyy hh:mm a", Locale.getDefault()) }
+        var principalText by remember(loanEntry) { mutableStateOf(loanEntry.loanAmount.toLong().toString()) }
+        var interestText by remember(loanEntry) { mutableStateOf(loanEntry.interestAmount.toLong().toString()) }
+        var deductionText by remember(loanEntry) { mutableStateOf(loanEntry.deduction.toLong().toString()) }
+        var weeklyAmtText by remember(loanEntry) { mutableStateOf(loanEntry.weeklyAmount.toLong().toString()) }
+        var totalWeeksText by remember(loanEntry) { mutableStateOf(loanEntry.totalWeeks.toString()) }
+        var disbDateText by remember(loanEntry) { mutableStateOf(sdfDisb.format(java.util.Date(loanEntry.startDate))) }
+        val initialMode = if (loanEntry.notes.contains("UPI", ignoreCase = true) || loanEntry.notes.contains("Online", ignoreCase = true)) "UPI" else "Cash"
+        var disbModeText by remember(loanEntry) { mutableStateOf(initialMode) }
+        var showDisbDatePicker by remember { mutableStateOf(false) }
+
+        val parsedDisbTimestamp = remember(disbDateText) {
+            try {
+                sdfDisb.parse(disbDateText)?.time ?: loanEntry.startDate
+            } catch (e: Exception) {
+                loanEntry.startDate
+            }
+        }
+
+        val showDisbTimePicker = {
+            val calendar = Calendar.getInstance().apply { timeInMillis = parsedDisbTimestamp }
+            android.app.TimePickerDialog(
+                context,
+                { _, hourOfDay, minute ->
+                    val newCal = Calendar.getInstance().apply {
+                        timeInMillis = parsedDisbTimestamp
+                        set(Calendar.HOUR_OF_DAY, hourOfDay)
+                        set(Calendar.MINUTE, minute)
+                    }
+                    disbDateText = sdfDisb.format(java.util.Date(newCal.timeInMillis))
+                },
+                calendar.get(Calendar.HOUR_OF_DAY),
+                calendar.get(Calendar.MINUTE),
+                false
+            ).show()
+        }
+
+        AlertDialog(
+            onDismissRequest = { editingDisbursementTarget = null },
+            containerColor = Color.White,
+            titleContentColor = Color.Black,
+            textContentColor = Color.Black,
+            title = { Text(translate("Edit Disbursement Entry", language), fontWeight = FontWeight.Bold, color = Color.Black) },
+            text = {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.verticalScroll(rememberScrollState())
+                ) {
+                    OutlinedTextField(
+                        value = principalText,
+                        onValueChange = { input ->
+                            principalText = input.filter { it.isDigit() }
+                            val p = principalText.toDoubleOrNull() ?: 0.0
+                            val i = interestText.toDoubleOrNull() ?: 0.0
+                            val w = totalWeeksText.toIntOrNull()?.takeIf { it > 0 } ?: 10
+                            if (w > 0) weeklyAmtText = ((p + i) / w).toLong().toString()
+                        },
+                        label = { Text(translate("Principal Amount (₹)", language), color = Color.Gray) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        textStyle = LocalTextStyle.current.copy(fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.Black),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.Black,
+                            unfocusedTextColor = Color.Black,
+                            focusedBorderColor = appColors.primaryAccent,
+                            unfocusedBorderColor = Color(0xFFCBD5E1),
+                            focusedContainerColor = Color.White,
+                            unfocusedContainerColor = Color.White
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        OutlinedTextField(
+                            value = interestText,
+                            onValueChange = { input ->
+                                interestText = input.filter { it.isDigit() }
+                                val p = principalText.toDoubleOrNull() ?: 0.0
+                                val i = interestText.toDoubleOrNull() ?: 0.0
+                                val w = totalWeeksText.toIntOrNull()?.takeIf { it > 0 } ?: 10
+                                if (w > 0) weeklyAmtText = ((p + i) / w).toLong().toString()
+                            },
+                            label = { Text(translate("Interest (₹)", language), color = Color.Gray) },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            textStyle = LocalTextStyle.current.copy(fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.Black),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = Color.Black,
+                                unfocusedTextColor = Color.Black,
+                                focusedBorderColor = appColors.primaryAccent,
+                                unfocusedBorderColor = Color(0xFFCBD5E1),
+                                focusedContainerColor = Color.White,
+                                unfocusedContainerColor = Color.White
+                            ),
+                            modifier = Modifier.weight(1f)
+                        )
+                        OutlinedTextField(
+                            value = deductionText,
+                            onValueChange = { input -> deductionText = input.filter { it.isDigit() } },
+                            label = { Text(translate("Deduction (₹)", language), color = Color.Gray) },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            textStyle = LocalTextStyle.current.copy(fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.Black),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = Color.Black,
+                                unfocusedTextColor = Color.Black,
+                                focusedBorderColor = appColors.primaryAccent,
+                                unfocusedBorderColor = Color(0xFFCBD5E1),
+                                focusedContainerColor = Color.White,
+                                unfocusedContainerColor = Color.White
+                            ),
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        OutlinedTextField(
+                            value = weeklyAmtText,
+                            onValueChange = { input -> weeklyAmtText = input.filter { it.isDigit() } },
+                            label = { Text(translate("Weekly Due (₹)", language), color = Color.Gray) },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            textStyle = LocalTextStyle.current.copy(fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.Black),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = Color.Black,
+                                unfocusedTextColor = Color.Black,
+                                focusedBorderColor = appColors.primaryAccent,
+                                unfocusedBorderColor = Color(0xFFCBD5E1),
+                                focusedContainerColor = Color.White,
+                                unfocusedContainerColor = Color.White
+                            ),
+                            modifier = Modifier.weight(1f)
+                        )
+                        OutlinedTextField(
+                            value = totalWeeksText,
+                            onValueChange = { input ->
+                                totalWeeksText = input.filter { it.isDigit() }
+                                val p = principalText.toDoubleOrNull() ?: 0.0
+                                val i = interestText.toDoubleOrNull() ?: 0.0
+                                val w = totalWeeksText.toIntOrNull()?.takeIf { it > 0 } ?: 10
+                                if (w > 0) weeklyAmtText = ((p + i) / w).toLong().toString()
+                            },
+                            label = { Text(translate("Total Weeks", language), color = Color.Gray) },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            textStyle = LocalTextStyle.current.copy(fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.Black),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = Color.Black,
+                                unfocusedTextColor = Color.Black,
+                                focusedBorderColor = appColors.primaryAccent,
+                                unfocusedBorderColor = Color(0xFFCBD5E1),
+                                focusedContainerColor = Color.White,
+                                unfocusedContainerColor = Color.White
+                            ),
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    OutlinedTextField(
+                        value = disbDateText,
+                        onValueChange = {},
+                        label = { Text(translate("Disbursal Date & Time", language), color = Color.Gray) },
+                        readOnly = true,
+                        textStyle = LocalTextStyle.current.copy(fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.Black),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.Black,
+                            unfocusedTextColor = Color.Black,
+                            focusedBorderColor = appColors.primaryAccent,
+                            unfocusedBorderColor = Color(0xFFCBD5E1),
+                            focusedContainerColor = Color.White,
+                            unfocusedContainerColor = Color.White
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { showDisbDatePicker = true },
+                        trailingIcon = {
+                            Row {
+                                IconButton(onClick = { showDisbDatePicker = true }) {
+                                    Icon(imageVector = Icons.Default.DateRange, contentDescription = "Pick Date", tint = appColors.primaryAccent)
+                                }
+                                IconButton(onClick = { showDisbTimePicker() }) {
+                                    Icon(imageVector = Icons.Default.Schedule, contentDescription = "Pick Time", tint = appColors.primaryAccent)
+                                }
+                            }
+                        }
+                    )
+                    if (showDisbDatePicker) {
+                        com.example.ui.components.AdvancedDatePickerDialog(
+                            initialTimeMs = parsedDisbTimestamp,
+                            onDismissRequest = { showDisbDatePicker = false },
+                            onDateSelected = { selectedTimeMs ->
+                                disbDateText = sdfDisb.format(java.util.Date(selectedTimeMs))
+                                showDisbDatePicker = false
+                            }
+                        )
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Surface(
+                            onClick = { disbModeText = "Cash" },
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (disbModeText == "Cash") appColors.primaryAccent.copy(alpha = 0.15f) else Color.Transparent,
+                            border = BorderStroke(1.dp, if (disbModeText == "Cash") appColors.primaryAccent else Color(0xFFCBD5E1)),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(translate("Cash", language), color = if (disbModeText == "Cash") appColors.primaryAccent else Color.DarkGray, fontWeight = FontWeight.Bold, fontSize = 12.sp, modifier = Modifier.padding(vertical = 10.dp), textAlign = TextAlign.Center)
+                        }
+                        Surface(
+                            onClick = { disbModeText = "UPI" },
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (disbModeText == "UPI") appColors.primaryAccent.copy(alpha = 0.15f) else Color.Transparent,
+                            border = BorderStroke(1.dp, if (disbModeText == "UPI") appColors.primaryAccent else Color(0xFFCBD5E1)),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(translate("UPI", language), color = if (disbModeText == "UPI") appColors.primaryAccent else Color.DarkGray, fontWeight = FontWeight.Bold, fontSize = 12.sp, modifier = Modifier.padding(vertical = 10.dp), textAlign = TextAlign.Center)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val parsedPrincipal = principalText.toDoubleOrNull() ?: loanEntry.loanAmount
+                        val parsedInterest = interestText.toDoubleOrNull() ?: loanEntry.interestAmount
+                        val parsedDeduction = deductionText.toDoubleOrNull() ?: loanEntry.deduction
+                        val parsedWeeks = totalWeeksText.toIntOrNull()?.takeIf { it > 0 } ?: loanEntry.totalWeeks
+                        val parsedWeekly = weeklyAmtText.toDoubleOrNull() ?: ((parsedPrincipal + parsedInterest) / parsedWeeks)
+                        val parsedDt = try {
+                            sdfDisb.parse(disbDateText)?.time ?: loanEntry.startDate
+                        } catch (e: Exception) {
+                            loanEntry.startDate
+                        }
+                        viewModel.updateLoanCycle(
+                            loanCycleId = loanEntry.id,
+                            amount = parsedPrincipal,
+                            interest = parsedInterest,
+                            weeklyInstalment = parsedWeekly,
+                            tenureWeeks = parsedWeeks,
+                            notes = disbModeText,
+                            startDate = parsedDt,
+                            deduction = parsedDeduction
+                        )
+                        editingDisbursementTarget = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = ColorGainGreen)
+                ) {
+                    Text(translate("Save Changes", language), color = Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { editingDisbursementTarget = null },
+                    colors = ButtonDefaults.textButtonColors(contentColor = Color.DarkGray)
+                ) {
+                    Text(translate("Cancel", language))
+                }
+            }
+        )
+    }
+}
+
+@Composable
+fun AnimatedSlideInItem(
+    index: Int,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit
+) {
+    val fromLeft = (index % 2 == 0)
+    var hasAppeared by remember { mutableStateOf(false) }
+    val offsetX by animateFloatAsState(
+        targetValue = if (hasAppeared) 0f else if (fromLeft) -160f else 160f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioLowBouncy,
+            stiffness = Spring.StiffnessMediumLow
+        ),
+        label = "slide_offset_x"
+    )
+    val alpha by animateFloatAsState(
+        targetValue = if (hasAppeared) 1f else 0.15f,
+        animationSpec = tween(durationMillis = 280),
+        label = "slide_alpha"
+    )
+    LaunchedEffect(Unit) {
+        hasAppeared = true
+    }
+    Box(
+        modifier = modifier.graphicsLayer {
+            translationX = offsetX
+            this.alpha = alpha
+        }
+    ) {
+        content()
+    }
 }
 
 @Composable
@@ -1364,12 +1753,27 @@ fun CylindricalDaySelector(
     val size = daysList.size
     if (size == 0) return
 
-    val lazyListState = rememberLazyListState()
-
+    val totalCycles = 200
+    val virtualCount = size * totalCycles
+    val centerCycleStart = (totalCycles / 2) * size
     val activeIndex = daysList.indexOf(activeDay).coerceAtLeast(0)
+
+    val lazyListState = rememberLazyListState(
+        initialFirstVisibleItemIndex = centerCycleStart + activeIndex
+    )
+
     LaunchedEffect(activeIndex, size) {
         if (activeIndex in 0 until size) {
-            lazyListState.animateScrollToItem(activeIndex)
+            val currentFirst = lazyListState.firstVisibleItemIndex
+            val currentCycleBase = (currentFirst / size) * size
+            val candidates = listOf(
+                currentCycleBase - size + activeIndex,
+                currentCycleBase + activeIndex,
+                currentCycleBase + size + activeIndex
+            ).filter { it in 0 until virtualCount }
+            val nearestIndex = candidates.minByOrNull { kotlin.math.abs(it - currentFirst) }
+                ?: (centerCycleStart + activeIndex)
+            lazyListState.animateScrollToItem(nearestIndex)
         }
     }
 
@@ -1388,8 +1792,8 @@ fun CylindricalDaySelector(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            items(daysList.size) { index ->
-                val day = daysList[index]
+            items(virtualCount) { virtualIdx ->
+                val day = daysList[virtualIdx % size]
                 val isActive = day == activeDay
                 val animatedElevation = animateDpAsState(
                     targetValue = if (isActive) 6.dp else 2.dp,
@@ -1406,7 +1810,7 @@ fun CylindricalDaySelector(
                         )
                         .threeDPressable { onDaySelected(day) }
                         .padding(horizontal = 16.dp, vertical = 6.dp)
-                        .testTag("day_selector_chip_$day"),
+                        .testTag(if (virtualIdx in centerCycleStart until (centerCycleStart + size)) "day_selector_chip_$day" else "day_selector_chip_${day}_$virtualIdx"),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
@@ -1637,7 +2041,8 @@ fun CashBalanceBoard(viewModel: FinanceViewModel, language: String) {
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                // Row 1: Yesterday's Cash
+                // Row 1: Yesterday's Cash (Plain value without border box, tap to edit)
+                var isEditingYesterdayInline by rememberSaveable { mutableStateOf(false) }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -1649,72 +2054,94 @@ fun CashBalanceBoard(viewModel: FinanceViewModel, language: String) {
                         fontWeight = FontWeight.Bold,
                         color = Color.Black
                     )
-                    
-                    BasicTextField(
-                        value = inputYesterdayCash,
-                        onValueChange = { inputYesterdayCash = it.filter { c -> c.isDigit() } },
-                        textStyle = LocalTextStyle.current.copy(
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold,
+
+                    if (!isEditingYesterdayInline) {
+                        Text(
+                            text = "₹${yesterdayCashInHand.toLong()}",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.ExtraBold,
                             color = Color.Black,
-                            textAlign = TextAlign.End
-                        ),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        singleLine = true,
-                        modifier = Modifier
-                            .width(120.dp)
-                            .background(Color.White, RoundedCornerShape(8.dp))
-                            .border(1.dp, Color(0xFFCBD5E1), RoundedCornerShape(8.dp))
-                            .onFocusChanged { focusState ->
-                                isYesterdayFocused = focusState.isFocused
-                                if (!focusState.isFocused) {
-                                    if (inputYesterdayCash.isBlank()) {
-                                        inputYesterdayCash = yesterdayCashInHand.toLong().toString()
-                                    } else {
-                                        val actualVal = inputYesterdayCash.toDoubleOrNull()
-                                        if (actualVal != null && actualVal != yesterdayCashInHand) {
-                                            val targetLog = lastLogBeforeToday
-                                            val systemVal = targetLog?.systemCash ?: 0.0
-                                            val collVal = targetLog?.collectionAmount ?: 0.0
-                                            val disbVal = targetLog?.disbursalAmount ?: 0.0
-                                            val expensesVal = systemVal - actualVal
-                                            val dateVal = targetLog?.date ?: (startOfToday - 12 * 3600 * 1000)
-                                            val logIdVal = targetLog?.id ?: 0
-                                            
-                                            viewModel.logCashBalance(
-                                                actualCash = actualVal,
-                                                systemCash = systemVal,
-                                                collectionAmount = collVal,
-                                                disbursalAmount = disbVal,
-                                                expenses = expensesVal,
-                                                date = dateVal,
-                                                logId = logIdVal
+                            modifier = Modifier
+                                .clickable {
+                                    inputYesterdayCash = if (yesterdayCashInHand == 0.0) "" else yesterdayCashInHand.toLong().toString()
+                                    isEditingYesterdayInline = true
+                                }
+                                .padding(vertical = 4.dp, horizontal = 4.dp)
+                                .testTag("yesterday_cash_input")
+                        )
+                    } else {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            BasicTextField(
+                                value = inputYesterdayCash,
+                                onValueChange = { inputYesterdayCash = it.filter { c -> c.isDigit() } },
+                                textStyle = LocalTextStyle.current.copy(
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = appColors.primaryAccent,
+                                    textAlign = TextAlign.End
+                                ),
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                singleLine = true,
+                                modifier = Modifier
+                                    .widthIn(min = 60.dp, max = 120.dp)
+                                    .onFocusChanged { focusState ->
+                                        isYesterdayFocused = focusState.isFocused
+                                    }
+                                    .testTag("yesterday_cash_input"),
+                                decorationBox = { innerTextField ->
+                                    Box(
+                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
+                                        contentAlignment = Alignment.CenterEnd
+                                    ) {
+                                        if (inputYesterdayCash.isEmpty()) {
+                                            Text(
+                                                text = "0",
+                                                fontSize = 15.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color.Gray,
+                                                textAlign = TextAlign.End
                                             )
                                         }
+                                        innerTextField()
                                     }
                                 }
-                            }
-                            .testTag("yesterday_cash_input"),
-                        decorationBox = { innerTextField ->
-                            Box(
-                                modifier = Modifier
-                                    .padding(horizontal = 8.dp, vertical = 6.dp)
-                                    .fillMaxWidth(),
-                                contentAlignment = Alignment.CenterEnd
-                            ) {
-                                if (inputYesterdayCash.isEmpty()) {
-                                    Text(
-                                        text = "₹ 0",
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color.Gray,
-                                        textAlign = TextAlign.End
+                            )
+                            IconButton(
+                                onClick = {
+                                    val actualVal = inputYesterdayCash.toDoubleOrNull() ?: 0.0
+                                    val targetLog = lastLogBeforeToday
+                                    val systemVal = targetLog?.systemCash ?: 0.0
+                                    val collVal = targetLog?.collectionAmount ?: 0.0
+                                    val disbVal = targetLog?.disbursalAmount ?: 0.0
+                                    val expensesVal = systemVal - actualVal
+                                    val dateVal = targetLog?.date ?: (startOfToday - 12 * 3600 * 1000)
+                                    val logIdVal = targetLog?.id ?: 0
+
+                                    viewModel.logCashBalance(
+                                        actualCash = actualVal,
+                                        systemCash = systemVal,
+                                        collectionAmount = collVal,
+                                        disbursalAmount = disbVal,
+                                        expenses = expensesVal,
+                                        date = dateVal,
+                                        logId = logIdVal
                                     )
-                                }
-                                innerTextField()
+                                    isEditingYesterdayInline = false
+                                },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Check,
+                                    contentDescription = "Save Yesterday Cash",
+                                    tint = ColorGainGreen,
+                                    modifier = Modifier.size(18.dp)
+                                )
                             }
                         }
-                    )
+                    }
                 }
 
                 // Row 2: Today's Cash Collections
@@ -1789,7 +2216,8 @@ fun CashBalanceBoard(viewModel: FinanceViewModel, language: String) {
                     )
                 }
 
-                // Row 5: My Recorded Cash in Hand
+                // Row 5: My Recorded Cash in Hand (Plain value 0 without black rounded box; tap to edit)
+                var isEditingActualCashInline by rememberSaveable { mutableStateOf(false) }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -1801,71 +2229,50 @@ fun CashBalanceBoard(viewModel: FinanceViewModel, language: String) {
                         fontWeight = FontWeight.Bold,
                         color = Color.Black
                     )
-                    
-                    if (todayLog != null) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            IconButton(
-                                onClick = {
-                                    val currentLog = todayLog
-                                    if (currentLog != null) {
-                                        viewModel.deleteCashBalanceLog(currentLog)
-                                        inputActualCash = currentLog.actualCash.toLong().toString()
-                                    }
-                                },
-                                modifier = Modifier
-                                    .size(24.dp)
-                                    .testTag("edit_cash_log_btn")
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Edit,
-                                    contentDescription = "Edit Cash Log",
-                                    tint = appColors.primaryAccent,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            }
-                            Text(
-                                text = "₹${todayLog!!.actualCash.toLong()}",
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.Black
-                            )
-                        }
+
+                    if (!isEditingActualCashInline) {
+                        val currentRecordedVal = todayLog?.actualCash?.toLong() ?: 0L
+                        Text(
+                            text = if (todayLog != null) "₹$currentRecordedVal" else "0",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = Color.Black,
+                            modifier = Modifier
+                                .clickable {
+                                    inputActualCash = if (currentRecordedVal == 0L) "" else currentRecordedVal.toString()
+                                    isEditingActualCashInline = true
+                                }
+                                .padding(vertical = 4.dp, horizontal = 4.dp)
+                                .testTag("actual_cash_input")
+                        )
                     } else {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            modifier = Modifier.widthIn(max = 180.dp)
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             BasicTextField(
                                 value = inputActualCash,
                                 onValueChange = { inputActualCash = it.filter { c -> c.isDigit() } },
                                 textStyle = LocalTextStyle.current.copy(
                                     fontSize = 16.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.Black,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = appColors.primaryAccent,
                                     textAlign = TextAlign.End
                                 ),
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                 singleLine = true,
                                 modifier = Modifier
-                                    .weight(1f)
-                                    .background(Color.White, RoundedCornerShape(8.dp))
-                                    .border(1.dp, Color.Black, RoundedCornerShape(8.dp))
+                                    .widthIn(min = 60.dp, max = 120.dp)
                                     .testTag("actual_cash_input"),
                                 decorationBox = { innerTextField ->
                                     Box(
-                                        modifier = Modifier
-                                            .padding(horizontal = 8.dp, vertical = 6.dp)
-                                            .fillMaxWidth(),
+                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
                                         contentAlignment = Alignment.CenterEnd
                                     ) {
                                         if (inputActualCash.isEmpty()) {
                                             Text(
-                                                text = "₹ 0",
-                                                fontSize = 13.sp,
+                                                text = "0",
+                                                fontSize = 15.sp,
                                                 fontWeight = FontWeight.Bold,
                                                 color = Color.Gray,
                                                 textAlign = TextAlign.End
@@ -1878,32 +2285,28 @@ fun CashBalanceBoard(viewModel: FinanceViewModel, language: String) {
 
                             IconButton(
                                 onClick = {
-                                    val actualVal = inputActualCash.toDoubleOrNull()
-                                    if (actualVal != null) {
-                                        val expensesVal = systemCashInHand - actualVal
-                                        viewModel.logCashBalance(
-                                            actualCash = actualVal,
-                                            systemCash = systemCashInHand,
-                                            collectionAmount = todayCashCollections,
-                                            disbursalAmount = todayCashDisbursals,
-                                            expenses = expensesVal
-                                        )
-                                        inputActualCash = ""
-                                    }
-                                },
-                                enabled = inputActualCash.isNotBlank(),
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .background(
-                                        color = if (inputActualCash.isNotBlank()) appColors.primaryAccent else Color.LightGray,
-                                        shape = RoundedCornerShape(8.dp)
+                                    val actualVal = inputActualCash.toDoubleOrNull() ?: 0.0
+                                    val expensesVal = systemCashInHand - actualVal
+                                    viewModel.logCashBalance(
+                                        actualCash = actualVal,
+                                        systemCash = systemCashInHand,
+                                        collectionAmount = todayCashCollections,
+                                        disbursalAmount = todayCashDisbursals,
+                                        expenses = expensesVal,
+                                        date = todayLog?.date ?: System.currentTimeMillis(),
+                                        logId = todayLog?.id ?: 0
                                     )
+                                    inputActualCash = ""
+                                    isEditingActualCashInline = false
+                                },
+                                modifier = Modifier
+                                    .size(28.dp)
                                     .testTag("save_cash_log_btn")
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Check,
                                     contentDescription = "Save Cash Log",
-                                    tint = Color.White,
+                                    tint = ColorGainGreen,
                                     modifier = Modifier.size(18.dp)
                                 )
                             }
@@ -2121,45 +2524,37 @@ fun StatsReportingCard(
             if (hasAnyPills) {
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // Beautiful vertical integration layout for dashboard stats to prevent horizontal truncations (no more dots / ellipses)
-                Column(
+                // 2-Line x 2-Column (Left side: 2 boxes, Right side: 2 boxes) with symbols only (no words)
+                Row(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    // 1. Collected
-                    if (showCollectionPill) {
+                    // Left Side Column (2 boxes: Collected & Profit)
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        // Box 1: Collected (Up arrow symbol only)
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .threeDDepthCard(elevation = 4.dp, shape = RoundedCornerShape(12.dp))
                                 .background(appColors.todayCollectionBg, RoundedCornerShape(12.dp))
                                 .threeDPressable(enabled = onCardClick != null) { onCardClick?.invoke("COLLECTION") }
-                                .padding(horizontal = 14.dp, vertical = 8.dp)
+                                .padding(horizontal = 12.dp, vertical = 9.dp)
                                 .testTag("stats_card_collection_btn"),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Filled.TrendingUp,
-                                    contentDescription = "Collected",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Text(
-                                    text = translate("Collected", language),
-                                    color = Color.White.copy(alpha = 0.9f),
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 11.sp,
-                                    letterSpacing = 0.5.sp
-                                )
-                            }
+                            Icon(
+                                imageVector = Icons.Filled.TrendingUp,
+                                contentDescription = "Collected",
+                                tint = Color.White,
+                                modifier = Modifier.size(18.dp)
+                            )
                             AnimatedNumberText(
                                 targetValue = showCollection,
-                                prefix = "₹ ",
+                                prefix = "₹",
                                 color = Color.White,
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.ExtraBold,
@@ -2169,138 +2564,102 @@ fun StatsReportingCard(
                                 durationMillis = 1200
                             )
                         }
-                    }
 
-                    // 2. Disbursed
-                    if (showDisbursedPill) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .threeDDepthCard(elevation = 4.dp, shape = RoundedCornerShape(12.dp))
-                                .background(appColors.todayDueCreatedBg, RoundedCornerShape(12.dp))
-                                .threeDPressable(enabled = onCardClick != null) { onCardClick?.invoke("DISBURSAL") }
-                                .padding(horizontal = 14.dp, vertical = 8.dp)
-                                .testTag("stats_card_disbursal_btn"),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Filled.TrendingDown,
-                                    contentDescription = "Disbursed",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Text(
-                                    text = translate("Disbursed", language),
-                                    color = Color.White.copy(alpha = 0.9f),
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 11.sp,
-                                    letterSpacing = 0.5.sp
-                                )
-                            }
-                            AnimatedNumberText(
-                                targetValue = showDisbursed,
-                                prefix = "₹ ",
-                                color = Color.White,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.ExtraBold,
-                                maxLines = 1,
-                                overflow = TextOverflow.Visible,
-                                delayMillis = 150,
-                                durationMillis = 1200
-                            )
-                        }
-                    }
-
-                    // 3. Interest
-                    if (showInterestPill) {
+                        // Box 2: Profit (% symbol only)
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .threeDDepthCard(elevation = 4.dp, shape = RoundedCornerShape(12.dp))
                                 .background(appColors.todayInterestBg, RoundedCornerShape(12.dp))
                                 .threeDPressable(enabled = onCardClick != null) { onCardClick?.invoke("PROFIT") }
-                                .padding(horizontal = 14.dp, vertical = 8.dp)
+                                .padding(horizontal = 12.dp, vertical = 9.dp)
                                 .testTag("stats_card_profit_btn"),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Percent,
-                                    contentDescription = "Profit",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Text(
-                                    text = translate("Profit", language),
-                                    color = Color.White.copy(alpha = 0.9f),
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 11.sp,
-                                    letterSpacing = 0.5.sp
-                                )
-                            }
+                            Icon(
+                                imageVector = Icons.Default.Percent,
+                                contentDescription = "Profit",
+                                tint = Color.White,
+                                modifier = Modifier.size(18.dp)
+                            )
                             AnimatedNumberText(
                                 targetValue = showInterest,
-                                prefix = "₹ ",
+                                prefix = "₹",
                                 color = Color.White,
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.ExtraBold,
                                 maxLines = 1,
                                 overflow = TextOverflow.Visible,
-                                delayMillis = 300,
+                                delayMillis = 200,
                                 durationMillis = 1200
                             )
                         }
                     }
 
-                    // 4. Deductions
-                    if (showDeductionsPill) {
+                    // Right Side Column (2 boxes: Disbursed & Deductions)
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        // Box 3: Disbursed (Down arrow symbol only)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .threeDDepthCard(elevation = 4.dp, shape = RoundedCornerShape(12.dp))
+                                .background(appColors.todayDueCreatedBg, RoundedCornerShape(12.dp))
+                                .threeDPressable(enabled = onCardClick != null) { onCardClick?.invoke("DISBURSAL") }
+                                .padding(horizontal = 12.dp, vertical = 9.dp)
+                                .testTag("stats_card_disbursal_btn"),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.TrendingDown,
+                                contentDescription = "Disbursed",
+                                tint = Color.White,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            AnimatedNumberText(
+                                targetValue = showDisbursed,
+                                prefix = "₹",
+                                color = Color.White,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Visible,
+                                delayMillis = 100,
+                                durationMillis = 1200
+                            )
+                        }
+
+                        // Box 4: Deductions ($/ symbol only)
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .threeDDepthCard(elevation = 4.dp, shape = RoundedCornerShape(12.dp))
                                 .background(Color(0xFF8B5CF6), RoundedCornerShape(12.dp))
                                 .threeDPressable(enabled = onCardClick != null) { onCardClick?.invoke("DEDUCTIONS") }
-                                .padding(horizontal = 14.dp, vertical = 8.dp)
+                                .padding(horizontal = 12.dp, vertical = 9.dp)
                                 .testTag("stats_card_deductions_btn"),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.MoneyOff,
-                                    contentDescription = "Deductions",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Text(
-                                    text = translate("Deductions", language),
-                                    color = Color.White.copy(alpha = 0.9f),
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 11.sp,
-                                    letterSpacing = 0.5.sp
-                                )
-                            }
+                            Icon(
+                                imageVector = Icons.Default.MoneyOff,
+                                contentDescription = "Deductions",
+                                tint = Color.White,
+                                modifier = Modifier.size(18.dp)
+                            )
                             AnimatedNumberText(
                                 targetValue = showDeductions,
-                                prefix = "₹ ",
+                                prefix = "₹",
                                 color = Color.White,
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.ExtraBold,
                                 maxLines = 1,
                                 overflow = TextOverflow.Visible,
-                                delayMillis = 450,
+                                delayMillis = 300,
                                 durationMillis = 1200
                             )
                         }
@@ -2416,11 +2775,48 @@ fun CustomerOverviewCard(
     onIndexClicked: () -> Unit,
     isScrolling: Boolean = false,
     onEditPaymentClicked: ((Int) -> Unit)? = null,
+    onEditDisbursementClicked: ((LoanCycle) -> Unit)? = null,
     hasPaymentInPast2Days: Boolean? = null
 ) {
     val appColors = LocalAppThemeColors.current
-    val context = LocalContext.current
     val currentUserRole by viewModel.currentUserRole.collectAsStateWithLifecycle()
+    val allPaymentsList by viewModel.allPayments.collectAsStateWithLifecycle()
+
+    // Compute overdue dot color for active loans:
+    // - No dot if paying normally (< 2 weeks missed)
+    // - Orange dot if unpaid > 2 weeks (14..28 days since last paid or >= 2 consecutive unpaid marks)
+    // - Red dot if unpaid > 4 weeks (> 28 days since last paid or >= 4 consecutive unpaid marks)
+    val overdueDotColor = remember(item.activeLoans, allPaymentsList) {
+        if (item.activeLoans.isEmpty()) {
+            null
+        } else {
+            val nowMs = System.currentTimeMillis()
+            val dayMs = 24L * 60L * 60L * 1000L
+            var maxSeverity = 0 // 0 = none, 1 = orange (>2w), 2 = red (>4w)
+            for (loan in item.activeLoans) {
+                val balance = (loan.loanAmount + loan.interestAmount) - loan.paidAmount
+                if (balance <= 0.0) continue
+                val loanPayments = allPaymentsList
+                    .filter { it.loanCycleId == loan.id && it.status.uppercase() != "DELETED" }
+                    .sortedByDescending { it.paymentDate }
+                val lastPositivePaidDate = loanPayments.firstOrNull { it.amountPaid > 0.0 }?.paymentDate ?: loan.startDate
+                val daysSincePaid = ((nowMs - lastPositivePaidDate) / dayMs).toInt()
+                val trailingUnpaidCount = loanPayments.takeWhile { it.amountPaid <= 0.0 || it.notes.equals("UNPAID", ignoreCase = true) }.size
+                val severity = when {
+                    daysSincePaid > 28 || trailingUnpaidCount >= 4 -> 2
+                    daysSincePaid > 14 || trailingUnpaidCount >= 2 || (daysSincePaid >= 7 && trailingUnpaidCount >= 1) -> 1
+                    else -> 0
+                }
+                if (severity > maxSeverity) maxSeverity = severity
+            }
+            when (maxSeverity) {
+                2 -> Color(0xFFEF4444) // Red dot (> 4 weeks unpaid)
+                1 -> Color(0xFFF97316) // Orange dot (> 2 weeks unpaid / 2nd week marked unpaid)
+                else -> null
+            }
+        }
+    }
+
     Card(
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White),
@@ -2428,6 +2824,7 @@ fun CustomerOverviewCard(
         border = BorderStroke(1.dp, appColors.primaryAccent.copy(alpha = 0.15f)),
         modifier = Modifier
             .fillMaxWidth()
+            .defaultMinSize(minHeight = 96.dp)
             .threeDDepthCard(elevation = 3.dp, shape = RoundedCornerShape(14.dp))
             .threeDPressable { onCardClicked() }
             .testTag("customer_card_${item.customer.id}")
@@ -2435,54 +2832,37 @@ fun CustomerOverviewCard(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(8.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .defaultMinSize(minHeight = 96.dp)
+                .padding(horizontal = 10.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.Top
         ) {
-            // Sequence Re-order controls
+            // Top-left plain Customer ID (no border/box) + Overdue Dot directly below it
             if (activeDay != "Home") {
-                if (showReorder) {
-                    Surface(
-                        color = Color(0xFFF1F5F9),
-                        shape = RoundedCornerShape(8.dp),
-                        border = BorderStroke(1.dp, Color(0xFFCBD5E1)),
-                        modifier = Modifier
-                            .padding(end = 8.dp)
-                            .clickable { onIndexClicked() }
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                            horizontalArrangement = Arrangement.Center,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "$displayIndex",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.Black
-                            )
-                        }
-                    }
-                } else {
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier
-                            .padding(end = 8.dp)
-                            .size(36.dp)
-                            .background(Color(0xFFF1F5F9), shape = CircleShape)
-                            .clickable {
-                                Toast.makeText(
-                                    viewModel.getApplication(),
-                                    translate("Auto-sorting is active. Select 'Route Order' to arrange manually.", language),
-                                    Toast.LENGTH_SHORT
-                                ).show()
-                            }
-                    ) {
-                        Text(
-                            text = "$displayIndex",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.Black
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Top,
+                    modifier = Modifier
+                        .width(28.dp)
+                        .padding(end = 6.dp)
+                        .clickable { onIndexClicked() }
+                        .testTag("customer_index_${item.customer.id}")
+                ) {
+                    Text(
+                        text = "$displayIndex",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = ColorSlateDark
+                    )
+                    Spacer(modifier = Modifier.height(5.dp))
+                    if (overdueDotColor != null) {
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .background(overdueDotColor, CircleShape)
+                                .testTag("customer_overdue_dot_${item.customer.id}")
                         )
+                    } else {
+                        Spacer(modifier = Modifier.size(8.dp))
                     }
                 }
             }
@@ -2491,7 +2871,8 @@ fun CustomerOverviewCard(
             Column(
                 modifier = Modifier
                     .weight(1.0f)
-                    .padding(horizontal = 4.dp)
+                    .padding(horizontal = 2.dp),
+                verticalArrangement = Arrangement.SpaceBetween
             ) {
                 // Customer Name on left and City on far right corner in the same straight line
                 Row(
@@ -2526,22 +2907,29 @@ fun CustomerOverviewCard(
                     }
                 }
 
-                if (item.customer.phone.isNotBlank()) {
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
+                Spacer(modifier = Modifier.height(2.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    if (item.customer.phone.isNotBlank()) {
                         Icon(Icons.Default.Phone, contentDescription = null, modifier = Modifier.size(10.dp), tint = Color.Black)
                         Text(
                             text = if (item.customer.phone2.isNotBlank()) "${item.customer.phone}, ${item.customer.phone2}" else item.customer.phone,
                             fontSize = 12.sp,
-                            color = Color.Black
+                            color = Color.Black,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    } else {
+                        Text(
+                            text = " ",
+                            fontSize = 12.sp
                         )
                     }
                 }
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(6.dp))
 
                 val todayCal = remember { Calendar.getInstance() }
                 val todayDayOfWeek = todayCal.get(Calendar.DAY_OF_WEEK)
@@ -2574,34 +2962,43 @@ fun CustomerOverviewCard(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Column(modifier = Modifier.weight(1.0f)) {
+                                Column(
+                                    modifier = Modifier
+                                        .weight(1.0f)
+                                        .padding(end = 6.dp)
+                                ) {
                                     Text(
                                         text = "Collected ₹${CurrencyFormatter.format(activeLoan.paidAmount)} / ₹${CurrencyFormatter.format(totalAmt)}",
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold,
-                                        color = ColorGainGreen
+                                        color = ColorGainGreen,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
-                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Spacer(modifier = Modifier.height(3.dp))
+                                    // Fixed-size progress bar so large amounts never shrink or misalign it
                                     LinearProgressIndicator(
                                         progress = { progress.coerceIn(0f, 1f) },
                                         modifier = Modifier
-                                            .fillMaxWidth(0.9f)
-                                            .height(5.dp)
+                                            .width(116.dp)
+                                            .height(6.dp)
                                             .clip(CircleShape),
                                         color = ColorGainGreen,
                                         trackColor = Color(0xFFE2E8F0)
                                     )
-                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Spacer(modifier = Modifier.height(3.dp))
                                     Text(
                                         text = "Due Bal: ₹${CurrencyFormatter.format(balance)}  •  ₹${CurrencyFormatter.format(activeLoan.weeklyAmount)}/wk",
                                         fontSize = 10.sp,
-                                        color = Color.Black
+                                        color = Color.Black,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                 }
                                 
                                 val todayPaidAmt = item.todaysPayments[activeLoan.id]
 
-                                val actualHasPaymentInPast2Days = remember(viewModel.allPayments.value, activeLoan.id) {
+                                val actualHasPaymentInPast2Days = remember(allPaymentsList, activeLoan.id) {
                                     val midnightToday = Calendar.getInstance().apply {
                                         set(Calendar.HOUR_OF_DAY, 0)
                                         set(Calendar.MINUTE, 0)
@@ -2609,7 +3006,7 @@ fun CustomerOverviewCard(
                                         set(Calendar.MILLISECOND, 0)
                                     }.timeInMillis
                                     val twoDaysAgoStart = midnightToday - java.util.concurrent.TimeUnit.DAYS.toMillis(2)
-                                    viewModel.allPayments.value.any {
+                                    allPaymentsList.any {
                                         it.loanCycleId == activeLoan.id &&
                                         it.paymentDate >= twoDaysAgoStart &&
                                         it.status.uppercase() != "DELETED" &&
@@ -2641,74 +3038,82 @@ fun CustomerOverviewCard(
 
                                 val showRedMultiple = needsAttention && isCustomerCollectionDayToday
 
-                                if (todayPaidAmt != null) {
-                                    Text(
-                                        text = if (todayPaidAmt == 0.0) "0" else "₹${CurrencyFormatter.format(todayPaidAmt)}",
-                                        color = ColorGainGreen,
-                                        fontWeight = FontWeight.ExtraBold,
-                                        fontSize = 14.sp,
-                                        modifier = Modifier
-                                            .padding(horizontal = 4.dp, vertical = 6.dp)
-                                            .clickable {
-                                                onEditPaymentClicked?.invoke(activeLoan.id)
-                                            }
-                                    )
-                                } else {
-                                    val isCreatedToday = (activeLoan.startDate >= (remember {
-                                         val cal = Calendar.getInstance()
-                                         cal.set(Calendar.HOUR_OF_DAY, 0)
-                                         cal.set(Calendar.MINUTE, 0)
-                                         cal.set(Calendar.SECOND, 0)
-                                         cal.set(Calendar.MILLISECOND, 0)
-                                         cal.timeInMillis
-                                     }))
-                                    if (isCreatedToday && isCurrentDayMyDay) {
+                                Box(
+                                    modifier = Modifier.width(88.dp),
+                                    contentAlignment = Alignment.CenterEnd
+                                ) {
+                                    if (todayPaidAmt != null) {
                                         Text(
-                                            text = "₹${CurrencyFormatter.format(totalAmt)}",
-                                            color = Color(0xFFFF5722),
+                                            text = if (todayPaidAmt == 0.0) "0" else "₹${CurrencyFormatter.format(todayPaidAmt)}",
+                                            color = ColorGainGreen,
                                             fontWeight = FontWeight.ExtraBold,
                                             fontSize = 14.sp,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
                                             modifier = Modifier
                                                 .padding(horizontal = 4.dp, vertical = 6.dp)
-                                                .clickable { onReceiveClicked(activeLoan.id) }
+                                                .clickable {
+                                                    onEditPaymentClicked?.invoke(activeLoan.id)
+                                                }
                                         )
                                     } else {
-                                        Column(
-                                            horizontalAlignment = Alignment.CenterHorizontally,
-                                            verticalArrangement = Arrangement.Center,
-                                            modifier = Modifier.padding(start = 4.dp)
-                                        ) {
-                                            if (showRedMultiple) {
-                                                Box(
-                                                    modifier = Modifier
-                                                        .size(24.dp)
-                                                         .background(Color.Red, CircleShape)
-                                                        .clickable {
-                                                            viewModel.recordWeeklyPayment(
-                                                                loanCycleId = activeLoan.id,
-                                                                amount = 0.0,
-                                                                weekNum = (viewModel.allPayments.value.filter { it.loanCycleId == activeLoan.id && it.status == "ACTIVE" && it.amountPaid > 0.0 && it.weekNumber > 0 }.maxOfOrNull { it.weekNumber } ?: 0) + 1,
-                                                                notes = "UNPAID"
-                                                            )
-                                                        },
-                                                    contentAlignment = Alignment.Center
-                                                ) {
-                                                    Text(
-                                                        text = "×",
-                                                        color = Color.White,
-                                                        fontSize = 15.sp,
-                                                         fontWeight = FontWeight.Bold,
-                                                         modifier = Modifier
-                                                    )
-                                                }
-                                                Spacer(modifier = Modifier.height(3.dp))
-                                            }
-                                            AttentionShakingGotButton(
-                                                shouldShake = showRedMultiple,
-                                                testTag = "quick_received_payment_${item.customer.id}_${activeLoan.id}",
-                                                modifier = if (currentUserRole == "USER") Modifier.requiredSize(0.dp) else Modifier,
-                                                onClick = { onReceiveClicked(activeLoan.id) }
+                                        val isCreatedToday = (activeLoan.startDate >= (remember {
+                                             val cal = Calendar.getInstance()
+                                             cal.set(Calendar.HOUR_OF_DAY, 0)
+                                             cal.set(Calendar.MINUTE, 0)
+                                             cal.set(Calendar.SECOND, 0)
+                                             cal.set(Calendar.MILLISECOND, 0)
+                                             cal.timeInMillis
+                                         }))
+                                        if (isCreatedToday && isCurrentDayMyDay) {
+                                            Text(
+                                                text = "₹${CurrencyFormatter.format(totalAmt)}",
+                                                color = Color(0xFFFF5722),
+                                                fontWeight = FontWeight.ExtraBold,
+                                                fontSize = 14.sp,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                modifier = Modifier
+                                                    .padding(horizontal = 4.dp, vertical = 6.dp)
+                                                    .clickable {
+                                                        onEditDisbursementClicked?.invoke(activeLoan)
+                                                    }
                                             )
+                                        } else {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                            ) {
+                                                if (showRedMultiple) {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .size(22.dp)
+                                                            .background(Color.Red, CircleShape)
+                                                            .clickable {
+                                                                viewModel.recordWeeklyPayment(
+                                                                    loanCycleId = activeLoan.id,
+                                                                    amount = 0.0,
+                                                                    weekNum = 0,
+                                                                    notes = "UNPAID"
+                                                                )
+                                                            },
+                                                        contentAlignment = Alignment.Center
+                                                    ) {
+                                                        Text(
+                                                            text = "×",
+                                                            color = Color.White,
+                                                            fontSize = 14.sp,
+                                                            fontWeight = FontWeight.Bold
+                                                        )
+                                                    }
+                                                }
+                                                AttentionShakingGotButton(
+                                                    shouldShake = showRedMultiple,
+                                                    testTag = "quick_received_payment_${item.customer.id}_${activeLoan.id}",
+                                                    modifier = if (currentUserRole == "USER") Modifier.requiredSize(0.dp) else Modifier,
+                                                    onClick = { onReceiveClicked(activeLoan.id) }
+                                                )
+                                            }
                                         }
                                     }
                                 }
@@ -2716,7 +3121,7 @@ fun CustomerOverviewCard(
                         }
                     }
                 } else {
-                    // No active loans
+                    // No active loans — maintain exact same height & fixed progress bar alignment as single active loan card
                     val isDisbursedToday = item.todaysDisbursedLoans.isNotEmpty()
                     val totalDisbursedAmt = if (isDisbursedToday) item.todaysDisbursedLoans.sumOf { it.loanAmount - it.deduction } else 0.0
 
@@ -2725,64 +3130,86 @@ fun CustomerOverviewCard(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Box(
+                        Column(
                             modifier = Modifier
                                 .weight(1.0f)
-                                .padding(end = 4.dp)
+                                .padding(end = 6.dp)
                         ) {
-                            Box(
+                            Text(
+                                text = if (isDisbursedToday) translate("New loan cycle disbursed today", language) else translate("No active cycle", language),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.Gray,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Spacer(modifier = Modifier.height(3.dp))
+                            LinearProgressIndicator(
+                                progress = { 0f },
                                 modifier = Modifier
-                                    .background(Color(0xFFF1F5F9), RoundedCornerShape(4.dp))
-                                    .padding(horizontal = 8.dp, vertical = 4.dp)
-                            ) {
-                                Text(
-                                    text = if (isDisbursedToday) {
-                                        translate("New loan cycle disbursed today", language)
-                                    } else {
-                                        translate("No active cycle", language)
-                                    },
-                                    fontSize = 11.sp,
-                                    color = Color.Black,
-                                    fontWeight = FontWeight.Medium
-                                )
-                            }
+                                    .width(116.dp)
+                                    .height(6.dp)
+                                    .clip(CircleShape),
+                                color = Color(0xFFE2E8F0),
+                                trackColor = Color(0xFFE2E8F0)
+                            )
+                            Spacer(modifier = Modifier.height(3.dp))
+                            Text(
+                                text = "Due Bal: ₹0  •  ₹0/wk",
+                                fontSize = 10.sp,
+                                color = Color.Gray,
+                                maxLines = 1
+                            )
                         }
 
-                        if (isCurrentDayMyDay) {
-                            if (isDisbursedToday) {
-                                Text(
-                                    text = "₹${CurrencyFormatter.format(totalDisbursedAmt)}",
-                                    color = Color(0xFFFF5722), // Red-orangish color
-                                    fontWeight = FontWeight.ExtraBold,
-                                    fontSize = 14.sp,
-                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp)
-                                )
-                            } else {
-                                // Hide the + DUE button completely stating 1 blank line in black colour
-                                Column(
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    modifier = Modifier.padding(horizontal = 8.dp)
-                                ) {
-                                    Text("—", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        Box(
+                            modifier = Modifier.width(88.dp),
+                            contentAlignment = Alignment.CenterEnd
+                        ) {
+                            if (isCurrentDayMyDay) {
+                                if (isDisbursedToday) {
+                                    Text(
+                                        text = "₹${CurrencyFormatter.format(totalDisbursedAmt)}",
+                                        color = Color(0xFFFF5722),
+                                        fontWeight = FontWeight.ExtraBold,
+                                        fontSize = 14.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier
+                                            .padding(horizontal = 4.dp, vertical = 6.dp)
+                                            .clickable {
+                                                item.todaysDisbursedLoans.firstOrNull()?.let { loan ->
+                                                    onEditDisbursementClicked?.invoke(loan)
+                                                }
+                                            }
+                                    )
+                                } else {
+                                    Text(
+                                        text = "0",
+                                        color = Color.Black,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 14.sp,
+                                        modifier = Modifier.padding(horizontal = 8.dp)
+                                    )
                                 }
-                            }
-                        } else {
-                            Button(
-                                onClick = { onAddLoanClicked() },
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF5722)),
-                                shape = RoundedCornerShape(8.dp),
-                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
-                                modifier = Modifier
-                                    .defaultMinSize(minWidth = 55.dp, minHeight = 28.dp).then(if (currentUserRole == "USER") Modifier.requiredSize(0.dp) else Modifier)
-                                    .padding(start = 4.dp)
-                            ) {
-                                Text(
-                                    text = "+ DUE",
-                                    color = Color.White,
-                                    fontWeight = FontWeight.ExtraBold,
-                                    fontSize = 11.sp,
-                                    maxLines = 1
-                                )
+                            } else {
+                                Button(
+                                    onClick = { onAddLoanClicked() },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF5722)),
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                                    modifier = Modifier
+                                        .defaultMinSize(minWidth = 55.dp, minHeight = 28.dp)
+                                        .then(if (currentUserRole == "USER") Modifier.requiredSize(0.dp) else Modifier)
+                                ) {
+                                    Text(
+                                        text = "+ DUE",
+                                        color = Color.White,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        fontSize = 11.sp,
+                                        maxLines = 1
+                                    )
+                                }
                             }
                         }
                     }
@@ -2792,17 +3219,16 @@ fun CustomerOverviewCard(
     }
 }
 
-
-
 @Composable
 fun HomePerformanceDashboard(
     allPayments: List<WeeklyPayment>,
     allLoanCycles: List<LoanCycle>,
+    collectionGroups: List<String>,
     language: String,
     appColors: AppThemeColors,
     onViewMoreClicked: () -> Unit
 ) {
-    val dailyStatsList = remember(allPayments, allLoanCycles, language) {
+    val dailyStatsList = remember(allPayments, allLoanCycles, collectionGroups, language) {
         val list = mutableListOf<DailyStats>()
         val currentLocale = when(language) {
             "Tamil" -> Locale("ta")
@@ -2812,7 +3238,10 @@ fun HomePerformanceDashboard(
         }
         val sdf = SimpleDateFormat("dd-MMM", currentLocale)
         val dayFormat = SimpleDateFormat("EEE", currentLocale)
-        
+        val englishDayNameFormat = SimpleDateFormat("EEEE", Locale.US)
+
+        val activeWeekDaysLower = collectionGroups.map { it.trim().lowercase(Locale.US) }
+
         val cal = Calendar.getInstance()
         cal.set(Calendar.HOUR_OF_DAY, 23)
         cal.set(Calendar.MINUTE, 59)
@@ -2857,9 +3286,17 @@ fun HomePerformanceDashboard(
                     0.0
                 }
             }
-            
-            val dateLabel = "${sdf.format(dayCal.time)} (${dayFormat.format(dayCal.time)})"
-            list.add(DailyStats(dateLabel, dayPaymentsSum, dayLoanSum, dayInterestSum))
+
+            // Exclude days not in the active Collection Group week list (e.g., Friday) unless collection/disbursal was recorded
+            val englishDayName = englishDayNameFormat.format(dayCal.time).lowercase(Locale.US)
+            val isInActiveWeekList = activeWeekDaysLower.any { group ->
+                group.startsWith(englishDayName) || englishDayName.startsWith(group)
+            } && englishDayName != "friday"
+
+            if (isInActiveWeekList || dayPaymentsSum > 0.0 || dayLoanSum > 0.0) {
+                val dateLabel = "${sdf.format(dayCal.time)} (${dayFormat.format(dayCal.time)})"
+                list.add(DailyStats(dateLabel, dayPaymentsSum, dayLoanSum, dayInterestSum))
+            }
         }
         list
     }
@@ -2992,7 +3429,7 @@ fun HomePerformanceDashboard(
             )
 
             PerformanceCard(
-                title = translate("Dues Created", language),
+                title = translate("Dues", language),
                 currentAmount = performanceStats.currentDueCreated,
                 previousAmount = performanceStats.previousDueCreated,
                 isUp = performanceStats.dueCreatedUp,
@@ -3077,7 +3514,7 @@ fun HomePerformanceDashboard(
                         modifier = Modifier.weight(1.2f)
                     )
                     Text(
-                        text = translate("Collections", language),
+                        text = translate("Collect", language),
                         fontWeight = FontWeight.Bold,
                         fontSize = 12.sp,
                         color = Color(0xFF15803D),
@@ -3085,7 +3522,7 @@ fun HomePerformanceDashboard(
                         modifier = Modifier.weight(1f)
                     )
                     Text(
-                        text = translate("Disbursed", language),
+                        text = translate("Given", language),
                         fontWeight = FontWeight.Bold,
                         fontSize = 12.sp,
                         color = Color(0xFF1D4ED8),
@@ -3121,7 +3558,7 @@ fun HomePerformanceDashboard(
                             modifier = Modifier.weight(1.2f)
                         )
                         Text(
-                            text = if (stats.collection > 0) "₹${CurrencyFormatter.format(stats.collection)}" else "—",
+                            text = if (stats.collection > 0) "₹${CurrencyFormatter.format(stats.collection)}" else "0",
                             fontSize = 12.sp,
                             fontWeight = if (stats.collection > 0) FontWeight.Bold else FontWeight.Normal,
                             color = if (stats.collection > 0) Color(0xFF16A34A) else Color.Gray,
@@ -3129,7 +3566,7 @@ fun HomePerformanceDashboard(
                             modifier = Modifier.weight(1f)
                         )
                         Text(
-                            text = if (stats.dueCreated > 0) "₹${CurrencyFormatter.format(stats.dueCreated)}" else "—",
+                            text = if (stats.dueCreated > 0) "₹${CurrencyFormatter.format(stats.dueCreated)}" else "0",
                             fontSize = 12.sp,
                             fontWeight = if (stats.dueCreated > 0) FontWeight.Bold else FontWeight.Normal,
                             color = if (stats.dueCreated > 0) Color(0xFF2563EB) else Color.Gray,
@@ -3137,7 +3574,7 @@ fun HomePerformanceDashboard(
                             modifier = Modifier.weight(1f)
                         )
                         Text(
-                            text = if (stats.interestCollected > 0) "₹${CurrencyFormatter.format(stats.interestCollected)}" else "—",
+                            text = if (stats.interestCollected > 0) "₹${CurrencyFormatter.format(stats.interestCollected)}" else "0",
                             fontSize = 12.sp,
                             fontWeight = if (stats.interestCollected > 0) FontWeight.Bold else FontWeight.Normal,
                             color = if (stats.interestCollected > 0) Color(0xFF9333EA) else Color.Gray,

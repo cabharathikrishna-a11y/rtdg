@@ -149,11 +149,18 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     private val _currentUser = MutableStateFlow(if (bypassLogin) com.example.util.SecureConfig.adminUsername.replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.US) else it.toString() } else (prefs.getString("current_user", "") ?: ""))
     val currentUser = _currentUser.asStateFlow()
 
-    private val _currentUserRole = MutableStateFlow(if (bypassLogin) "ADMIN" else (prefs.getString("current_role", "ADMIN") ?: "ADMIN"))
+    private val _currentUserRole = MutableStateFlow("ADMIN")
     val currentUserRole = _currentUserRole.asStateFlow()
 
-    private val _hasCompletedDeviceSetup = MutableStateFlow(if (bypassLogin) true else prefs.getBoolean("has_completed_device_setup", false))
+    private val _hasCompletedDeviceSetup = MutableStateFlow(true)
     val hasCompletedDeviceSetup = _hasCompletedDeviceSetup.asStateFlow()
+
+    private val _settingsSubPage = MutableStateFlow<String?>(null)
+    val settingsSubPage = _settingsSubPage.asStateFlow()
+
+    fun setSettingsSubPage(subPage: String?) {
+        _settingsSubPage.value = subPage
+    }
 
     private val _firebaseUsers = MutableStateFlow<List<FirebaseUser>>(emptyList())
     val firebaseUsers = _firebaseUsers.asStateFlow()
@@ -713,9 +720,29 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     private val _aiEnabled = MutableStateFlow(prefs.getBoolean("ai_enabled", true))
     val aiEnabled = _aiEnabled.asStateFlow()
 
+    private val _aiSpeechLanguage = MutableStateFlow(prefs.getString("ai_speech_language", "") ?: "")
+    val aiSpeechLanguage = _aiSpeechLanguage.asStateFlow()
+
+    private fun isAiTamilActive(speechLangOverride: String? = null): Boolean {
+        val speechLang = speechLangOverride ?: _aiSpeechLanguage.value
+        return if (speechLang.isNotBlank()) {
+            speechLang.equals("Tamil", ignoreCase = true) || speechLang.equals("ta-IN", ignoreCase = true)
+        } else {
+            (prefs.getString("language", "English") ?: "English").equals("Tamil", ignoreCase = true)
+        }
+    }
+
+    private fun getInitialAiGreeting(isTamil: Boolean): String {
+        return if (isTamil) {
+            "வணக்கம்! நான் ஈஸ்வர், உங்களின் எம்.டி பைனான்ஸ் ஏஐ உதவியாளர். கடன் தகவல்கள், வசூல் விவரங்கள் குறித்து எதை வேண்டுமானாலும் என்னிடம் கேளுங்கள்!"
+        } else {
+            "Hello! I am Easwar, your MD Finance AI Assistant. I have real-time access to all local borrower logs, active loans, and collections. How can I help you today?"
+        }
+    }
+
     private val _aiChatMessages = MutableStateFlow<List<ChatMessage>>(listOf(
         ChatMessage(
-            text = "Hello! I am Easwar, your MD Finance AI Assistant. I have real-time access to all local borrower logs, active loans, and collections. How can I help you in Tamil or English today?\n\nவணக்கம்! நான் ஈஸ்வர், உங்களின் எம்.டி பைனான்ஸ் ஏஐ உதவியாளர். கடன் தகவல்கள், வசூல் விவரங்கள் குறித்து எதை வேண்டுமானாலும் என்னிடம் கேளுங்கள்!",
+            text = getInitialAiGreeting(isAiTamilActive()),
             isUser = false
         )
     ))
@@ -723,9 +750,6 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
 
     private val _aiChatLoading = MutableStateFlow(false)
     val aiChatLoading = _aiChatLoading.asStateFlow()
-
-    private val _aiSpeechLanguage = MutableStateFlow(prefs.getString("ai_speech_language", "") ?: "")
-    val aiSpeechLanguage = _aiSpeechLanguage.asStateFlow()
 
     private val _aiThinkingMode = MutableStateFlow(prefs.getString("ai_thinking_mode", "Low Latency") ?: "Low Latency")
     val aiThinkingMode = _aiThinkingMode.asStateFlow()
@@ -769,12 +793,30 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     fun setAiSpeechLanguage(lang: String) {
         _aiSpeechLanguage.value = lang
         prefs.edit().putString("ai_speech_language", lang).apply()
+        val isTamil = isAiTamilActive(lang)
+        val current = _aiChatMessages.value
+        if (current.isNotEmpty() && !current[0].isUser) {
+            val updatedFirst = current[0].copy(
+                text = if (current.size == 1 && (current[0].text.contains("cleared", ignoreCase = true) || current[0].text.contains("அழிக்கப்பட்டது"))) {
+                    if (isTamil) "உரையாடல் வரலாறு அழிக்கப்பட்டது. நான் ஈஸ்வர், இன்று உங்களுக்கு எவ்வாறு உதவ முடியும்?"
+                    else "Chat history cleared. I am Easwar, how can I help you today?"
+                } else {
+                    getInitialAiGreeting(isTamil)
+                }
+            )
+            _aiChatMessages.value = listOf(updatedFirst) + current.drop(1)
+        }
     }
 
     fun clearAiChat() {
+        val isTamil = isAiTamilActive()
         _aiChatMessages.value = listOf(
             ChatMessage(
-                text = "Chat history cleared. I am Easwar, how can I help you today?\n\nஉரையாடல் வரலாறு அழிக்கப்பட்டது. நான் ஈஸ்வர், இன்று உங்களுக்கு எவ்வாறு உதவ முடியும்?",
+                text = if (isTamil) {
+                    "உரையாடல் வரலாறு அழிக்கப்பட்டது. நான் ஈஸ்வர், இன்று உங்களுக்கு எவ்வாறு உதவ முடியும்?"
+                } else {
+                    "Chat history cleared. I am Easwar, how can I help you today?"
+                },
                 isUser = false
             )
         )
@@ -831,13 +873,19 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     fun sendChatMessageToEaswar(messageText: String) {
         if (messageText.isBlank()) return
 
+        val isTamilMode = isAiTamilActive()
+
         // Append user chat message
         val userMsg = ChatMessage(text = messageText, isUser = true)
         _aiChatMessages.value = _aiChatMessages.value + userMsg
 
         if (offlineModeEnabled.value) {
             _aiChatMessages.value = _aiChatMessages.value + ChatMessage(
-                text = "Easwar is offline. Realtime AI network requests are deactivated in Offline Mode. Please disable Offline Mode in settings to resume.\n\nஈஸ்வர் ஆஃப்லைனில் உள்ளார். ஆஃப்லைன் பயன்முறையில் ஏஐ இயங்காது. உரையாடலைத் தொடர, தயவுசெய்து அமைப்புகளில் ஆஃப்லைன் பயன்முறையை முடக்கவும்.",
+                text = if (isTamilMode) {
+                    "ஈஸ்வர் ஆஃப்லைனில் உள்ளார். ஆஃப்லைன் பயன்முறையில் ஏஐ இயங்காது. உரையாடலைத் தொடர, தயவுசெய்து அமைப்புகளில் ஆஃப்லைன் பயன்முறையை முடக்கவும்."
+                } else {
+                    "Easwar is offline. Realtime AI network requests are deactivated in Offline Mode. Please disable Offline Mode in settings to resume."
+                },
                 isUser = false
             )
             return
@@ -850,7 +898,11 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                 val apiKey = com.example.util.SecureConfig.geminiApiKey
                 if (apiKey.isBlank() || apiKey == "MY_GEMINI_API_KEY") {
                     _aiChatMessages.value = _aiChatMessages.value + ChatMessage(
-                        text = "Gemini API key is not configured in Secrets. Please configure GEMINI_API_KEY to start conversing with Easwar.",
+                        text = if (isTamilMode) {
+                            "Gemini API திறவுகோல் (GEMINI_API_KEY) அமைக்கப்படவில்லை. ஈஸ்வருடன் உரையாட GEMINI_API_KEY-ஐ அமைக்கவும்."
+                        } else {
+                            "Gemini API key is not configured in Secrets. Please configure GEMINI_API_KEY to start conversing with Easwar."
+                        },
                         isUser = false
                     )
                     _aiChatLoading.value = false
@@ -876,18 +928,37 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
 
                 val requestObj = org.json.JSONObject()
 
+                val strictLanguageDirective = if (isTamilMode) {
+                    """
+                    CRITICAL LANGUAGE DIRECTIVE:
+                    - The top language selector is set to TAMIL (தமிழ்).
+                    - You MUST reply STRICTLY AND ONLY in Tamil (தமிழ்).
+                    - NEVER output English sentences or bilingual English+Tamil responses.
+                    - Even if the user types or speaks in English or any other language, translate their question/intent and reply ONLY in Tamil.
+                    """.trimIndent()
+                } else {
+                    """
+                    CRITICAL LANGUAGE DIRECTIVE:
+                    - The top language selector is set to ENGLISH.
+                    - You MUST reply STRICTLY AND ONLY in English.
+                    - NEVER output Tamil sentences or bilingual English+Tamil responses.
+                    - Even if the user types or speaks in Tamil or any other language, translate their question/intent and reply ONLY in English.
+                    """.trimIndent()
+                }
+
                 // System Instruction block configures Gemini's personality and local database context
                 if (!isImgMode) {
                     val systemInstructionObj = org.json.JSONObject()
-                    val savedInstruction = prefs.getString("ai_system_instruction", "Your name is Easwar. You are Muneeswaran P's finance assistant. Always answer the user accurately using Tamil or English based on preference. Keep responses clear and compact. Refer to borrower names and outstanding numbers directly from the context.")
-                    val systemPart = org.json.JSONObject().put("text", systemContext + "\nUser Instructions:\n" + savedInstruction)
+                    val savedInstruction = prefs.getString("ai_system_instruction", "Your name is Easwar. You are Muneeswaran P's finance assistant. Keep responses clear and compact. Refer to borrower names and outstanding numbers directly from the context.")
+                    val systemPart = org.json.JSONObject().put("text", systemContext + "\n" + strictLanguageDirective + "\nUser Instructions:\n" + savedInstruction)
                     systemInstructionObj.put("parts", org.json.JSONArray().put(systemPart))
                     requestObj.put("systemInstruction", systemInstructionObj)
                 }
 
                 // Populate past conversation history
                 val contentsArray = org.json.JSONArray()
-                _aiChatMessages.value.forEach { msg ->
+                val historyList = _aiChatMessages.value
+                historyList.forEachIndexed { idx, msg ->
                     val contentObj = org.json.JSONObject()
                     contentObj.put("role", if (msg.isUser) "user" else "model")
                     val partObj = org.json.JSONObject()
@@ -899,7 +970,16 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                         }
                         partObj.put("inlineData", inlineDataObj)
                     } else {
-                        partObj.put("text", msg.text)
+                        val textToSend = if (msg.isUser && idx == historyList.lastIndex && !isImgMode) {
+                            if (isTamilMode) {
+                                "${msg.text}\n[System Note: Reply strictly and only in Tamil (தமிழ்). Do not include English. Translate if needed.]"
+                            } else {
+                                "${msg.text}\n[System Note: Reply strictly and only in English. Do not include Tamil. Translate if needed.]"
+                            }
+                        } else {
+                            msg.text
+                        }
+                        partObj.put("text", textToSend)
                     }
                     contentObj.put("parts", org.json.JSONArray().put(partObj))
                     contentsArray.put(contentObj)
@@ -1200,8 +1280,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
             _firebaseSyncStatus.value = "Live Sync Paused"
             try {
                 val rtdb = FirebaseDatabase.getInstance(com.example.util.SecureConfig.firebaseDatabaseUrl)
-                val ref = rtdb.getReference("ledger_csv")
-                firebaseListener?.let { ref.removeEventListener(it) }
+                rtdb.purgeOutstandingWrites()
             } catch (e: Exception) {
                 e.printStackTrace()
             }
@@ -1211,13 +1290,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     private var isRestoringFromJson = false
 
     fun determineRoleForEmail(email: String?): String {
-        if (email.isNullOrBlank()) return "USER"
-        val clean = email.trim()
-        return if (clean.equals("muneeswaran45@gmail.com", ignoreCase = true) || clean.equals(com.example.util.SecureConfig.adminUsername, ignoreCase = true)) {
-            "ADMIN"
-        } else {
-            "USER"
-        }
+        return "ADMIN"
     }
 
     init {
@@ -1228,21 +1301,13 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         
         val savedIsLoggedIn = if (bypassLogin) true else prefs.getBoolean("is_logged_in", false)
         val savedUser = if (bypassLogin) com.example.util.SecureConfig.adminUsername.replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.US) else it.toString() } else (prefs.getString("current_user", "") ?: "")
-        val savedEmail = prefs.getString("current_email", "") ?: ""
-        val savedRole = if (bypassLogin) {
-            "ADMIN"
-        } else if (savedEmail.isNotBlank()) {
-            determineRoleForEmail(savedEmail)
-        } else if (savedUser.equals(com.example.util.SecureConfig.adminUsername, ignoreCase = true) || savedUser.equals("muneeswaran", ignoreCase = true) || savedUser.equals("Demo", ignoreCase = true)) {
-            "ADMIN"
-        } else {
-            "USER"
-        }
+        val savedRole = "ADMIN"
 
         _isLoggedIn.value = savedIsLoggedIn
         _currentUser.value = savedUser
         _username.value = savedUser
         _currentUserRole.value = savedRole
+        _hasCompletedDeviceSetup.value = true
         repository.deviceUsername = savedUser
         
         repository.deviceUsername = _username.value
@@ -1256,36 +1321,16 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         startFirebaseSyncListening()
         viewModelScope.launch {
             try {
-                triggerAutoBackupIfNeeded()
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
+                com.example.util.FestivalAndMilestoneHelper.refreshFestivalCalendarFromInternet(getApplication())
+            } catch (_: Exception) {}
         }
-
         viewModelScope.launch {
             try {
-                triggerDatabaseRescanAndRepair()
+                recalibrateCalculationsSilent()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            } finally {
                 isReconcilingMaster.value = false
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-        }
-        
-        viewModelScope.launch {
-            try {
-                combine(
-                    repository.allCustomers,
-                    repository.allLoanCycles,
-                    repository.allPayments
-                ) { _, _, _ -> }
-                    .debounce(3000)
-                    .collect {
-                        if (!isRestoringFromJson) {
-                            markDirty()
-                        }
-                    }
-            } catch (e: Throwable) {
-                e.printStackTrace()
             }
         }
     }
@@ -1319,9 +1364,8 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
 
 
     fun markDirty() {
-        if (!syncPaused.value) {
-            uploadLocalDataToFirebaseCloud()
-        }
+        // Entity deltas are already queued & debounced via pushFirebaseEditLog -> CloudLedgerSyncEngine.enqueueOfflineOrLiveEdit.
+        // Avoid triggering redundant full-database flushes on local Room emissions or preference toggles.
     }
 
     // Settings setters
@@ -1338,35 +1382,36 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                 // Ensure all entities have correct UUIDs
                 repository.populateMissingUuids()
 
-                // Recalculate all loan cycle payments and statuses with 72h auto-deletion for past records
+                // Recalculate all loan cycle payments and statuses; retain past records (editable for 6 months, compact plain-text archive after 6 months)
                 val finalLoans = db.collectionDao().getAllLoanCyclesOnce()
                 val finalPayments = db.collectionDao().getAllPaymentsOnce()
                 val now = System.currentTimeMillis()
-                val seventyTwoHoursMs = 72 * 60 * 60 * 1000L
+                val sixMonthsMs = 180L * 24L * 60L * 60L * 1000L
+                val compactDateFmt = java.text.SimpleDateFormat("dd/MM/yy", java.util.Locale.US)
 
                 for (loan in finalLoans) {
                     if (loan.status.uppercase() == "DELETED") continue
                     val cyclePayments = finalPayments.filter { it.loanCycleId == loan.id && it.status.uppercase() != "DELETED" }
                     val sumPaid = cyclePayments.sumOf { it.amountPaid }
                     val targetAmount = loan.loanAmount + loan.interestAmount
-                    val computedStatus = if (sumPaid >= targetAmount) "PAID" else "ACTIVE"
+                    val computedStatus = if (sumPaid >= targetAmount || loan.notes.startsWith("COMPACT_6M|")) "PAID" else "ACTIVE"
 
-                    // Auto-delete past records after 72 hours of completion
-                    if (computedStatus == "PAID") {
+                    var updatedNotes = loan.notes
+                    if (computedStatus == "PAID" && !loan.notes.startsWith("COMPACT_6M|")) {
                         val lastPaymentTime = cyclePayments.maxByOrNull { it.paymentDate }?.paymentDate ?: loan.lastModified
                         val completionTime = if (lastPaymentTime > 0) lastPaymentTime else loan.lastModified
-                        if (completionTime > 0 && (now - completionTime) >= seventyTwoHoursMs) {
-                            db.collectionDao().updateLoanCycle(loan.copy(status = "DELETED", lastModified = now))
-                            cyclePayments.forEach { p ->
-                                db.collectionDao().insertPayment(p.copy(status = "DELETED", lastModified = now))
+                        if (completionTime > 0 && (now - completionTime) >= sixMonthsMs) {
+                            val entriesText = cyclePayments.sortedBy { it.paymentDate }.joinToString(",") { p ->
+                                "W${p.weekNumber}:${p.amountPaid.toInt()}@${compactDateFmt.format(java.util.Date(p.paymentDate))}"
                             }
-                            continue
+                            updatedNotes = "COMPACT_6M|Start:${compactDateFmt.format(java.util.Date(loan.startDate))}|Closed:${compactDateFmt.format(java.util.Date(completionTime))}|P:${loan.loanAmount.toInt()}|I:${loan.interestAmount.toInt()}|D:${loan.deduction.toInt()}|Paid:${sumPaid.toInt()}|$entriesText"
                         }
                     }
 
-                    if (loan.paidAmount != sumPaid || loan.status != computedStatus) {
+                    val finalPaid = if (loan.notes.startsWith("COMPACT_6M|")) maxOf(loan.paidAmount, targetAmount) else sumPaid
+                    if (loan.paidAmount != finalPaid || loan.status != computedStatus || loan.notes != updatedNotes) {
                         db.collectionDao().updateLoanCycle(
-                            loan.copy(paidAmount = sumPaid, status = computedStatus)
+                            loan.copy(paidAmount = finalPaid, status = computedStatus, notes = updatedNotes)
                         )
                     }
                 }
@@ -1428,71 +1473,35 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
             _firebaseSyncStatus.value = "Demo Mode (Offline)"
             return
         }
-        try {
-            val rtdb = FirebaseDatabase.getInstance(com.example.util.SecureConfig.firebaseDatabaseUrl)
-            val ref = rtdb.getReference("ledger_csv")
-
-            firebaseListener?.let { ref.removeEventListener(it) }
-
-            if (offlineModeEnabled.value) {
-                _firebaseSyncStatus.value = "Offline Mode Active"
-                return
+        if (offlineModeEnabled.value) {
+            _firebaseSyncStatus.value = "Offline Mode Active"
+            return
+        }
+        if (syncPaused.value) {
+            _firebaseSyncStatus.value = "Paused"
+            return
+        }
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                _isSyncing.value = true
+                _firebaseSyncStatus.value = "Checking RTDB Device Gate & Firestore Audit Log..."
+                com.example.network.CloudLedgerSyncEngine.initializeDevicePresenceAndTriggers(
+                    context = getApplication(),
+                    db = db,
+                    onStatusUpdate = { msg -> _firebaseSyncStatus.value = msg }
+                )
+                val statusMsg = com.example.network.CloudLedgerSyncEngine.reconcileWithCloud(
+                    context = getApplication(),
+                    db = db,
+                    forceFullMigrationCheck = false,
+                    onProgress = { msg -> _firebaseSyncStatus.value = msg }
+                )
+                _firebaseSyncStatus.value = statusMsg
+            } catch (e: Exception) {
+                _firebaseSyncStatus.value = "Sync Notice: ${e.localizedMessage ?: "Offline cache active"}"
+            } finally {
+                _isSyncing.value = false
             }
-
-            if (syncPaused.value) {
-                _firebaseSyncStatus.value = "Paused"
-                return
-            }
-
-            if (currentUserRole.value != "USER") {
-                _firebaseSyncStatus.value = "Standalone (Main Device)"
-                return
-            }
-
-            _firebaseSyncStatus.value = "Connecting..."
-
-            val listener = object : ValueEventListener {
-                override fun onDataChange(snapshot: DataSnapshot) {
-                    if (currentUserRole.value != "USER") return
-                    if (syncPaused.value) return
-
-                    val csvText = snapshot.getValue(String::class.java)
-                    if (csvText.isNullOrBlank()) {
-                        _firebaseSyncStatus.value = "Cloud Empty"
-                        return
-                    }
-
-                    viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-                        try {
-                            _isSyncing.value = true
-                            _firebaseSyncStatus.value = "Loading Cloud Ledger..."
-                            val dao = db.collectionDao()
-                            db.withTransaction {
-                                dao.deleteAllPayments()
-                                dao.deleteAllLoanCycles()
-                                dao.deleteAllCustomers()
-                            }
-                            com.example.util.CsvBackupHelper.importCsvIntoDay(getApplication(), csvText, "ALL", db)
-                            _firebaseSyncStatus.value = "Synced with Cloud"
-                            _isSyncing.value = false
-                        } catch (e: Exception) {
-                            e.printStackTrace()
-                            _firebaseSyncStatus.value = "Sync Error: ${e.localizedMessage}"
-                            _isSyncing.value = false
-                        }
-                    }
-                }
-
-                override fun onCancelled(error: DatabaseError) {
-                    _firebaseSyncStatus.value = error.message
-                }
-            }
-
-            firebaseListener = listener
-            ref.addValueEventListener(listener)
-        } catch (e: Exception) {
-            e.printStackTrace()
-            _firebaseSyncStatus.value = "RTDB Init Failed"
         }
     }
 
@@ -1505,31 +1514,23 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             try {
                 _isSyncing.value = true
-                val customersList = db.collectionDao().getAllCustomersOnce()
-                val loanCyclesList = db.collectionDao().getAllLoanCyclesOnce()
-                val paymentsList = db.collectionDao().getAllPaymentsOnce()
-                val cashBalanceLogsList = db.collectionDao().getAllCashBalanceLogsOnce()
-
-                val csvString = com.example.util.CsvBackupHelper.generateCsvString(
-                    customers = customersList,
-                    loanCycles = loanCyclesList,
-                    payments = paymentsList,
-                    dayFilter = "ALL",
-                    cashBalanceLogs = cashBalanceLogsList
+                com.example.network.CloudLedgerSyncEngine.flushPendingEditsWithConflictCheck(
+                    context = getApplication(),
+                    db = db
                 )
-                val rtdb = FirebaseDatabase.getInstance(com.example.util.SecureConfig.firebaseDatabaseUrl)
-                val ref = rtdb.getReference("ledger_csv")
-                val task = ref.setValue(csvString)
-                com.google.android.gms.tasks.Tasks.await(task, 5, java.util.concurrent.TimeUnit.SECONDS)
-                
-                // Sync Day Branches & Customer Sub-Branches to Firebase RTDB
-                com.example.util.RtdbSyncHelper.syncToFirebaseRtdb(rtdb, customersList, loanCyclesList, paymentsList)
-
-                _firebaseSyncStatus.value = "Synced (${customersList.size} borrowers)"
+                val count = db.collectionDao().getAllCustomersOnce().size
+                val peers = com.example.network.CloudLedgerSyncEngine.onlinePeerCount.value
+                val pending = com.example.network.CloudLedgerSyncEngine.pendingOfflineCount.value
+                _firebaseSyncStatus.value = if (pending > 0) {
+                    "Offline Queue ($pending pending • $count borrowers)"
+                } else if (peers > 0) {
+                    "Synced ($count borrowers • $peers peer online)"
+                } else {
+                    "Synced ($count borrowers)"
+                }
             } catch (e: Exception) {
-                e.printStackTrace()
                 val realError = if (e is java.util.concurrent.ExecutionException) e.cause ?: e else e
-                _firebaseSyncStatus.value = "Cloud Sync Error: ${realError.message}"
+                _firebaseSyncStatus.value = "Cloud Sync Queued: ${realError.message}"
             } finally {
                 _isSyncing.value = false
             }
@@ -1544,35 +1545,61 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             try {
                 _isSyncing.value = true
-                _firebaseSyncStatus.value = "Force Overwriting Cloud..."
-                val customersList = db.collectionDao().getAllCustomersOnce()
-                val loanCyclesList = db.collectionDao().getAllLoanCyclesOnce()
-                val paymentsList = db.collectionDao().getAllPaymentsOnce()
-                val cashBalanceLogsList = db.collectionDao().getAllCashBalanceLogsOnce()
-
-                val csvString = com.example.util.CsvBackupHelper.generateCsvString(
-                    customers = customersList,
-                    loanCycles = loanCyclesList,
-                    payments = paymentsList,
-                    dayFilter = "ALL",
-                    cashBalanceLogs = cashBalanceLogsList
+                _firebaseSyncStatus.value = "Reconciling & Uploading to Firestore..."
+                val summary = com.example.network.CloudLedgerSyncEngine.reconcileWithCloud(
+                    context = getApplication(),
+                    db = db,
+                    forceFullMigrationCheck = true,
+                    onProgress = { msg -> _firebaseSyncStatus.value = msg }
                 )
-                val rtdb = FirebaseDatabase.getInstance(com.example.util.SecureConfig.firebaseDatabaseUrl)
-                val ref = rtdb.getReference("ledger_csv")
-                val task = ref.setValue(csvString)
-                com.google.android.gms.tasks.Tasks.await(task, 5, java.util.concurrent.TimeUnit.SECONDS)
-
-                // Sync Day Branches & Customer Sub-Branches to Firebase RTDB
-                com.example.util.RtdbSyncHelper.syncToFirebaseRtdb(rtdb, customersList, loanCyclesList, paymentsList)
-
-                _firebaseSyncStatus.value = "Cloud Overwritten successfully!"
+                _firebaseSyncStatus.value = summary
             } catch (e: Exception) {
-                e.printStackTrace()
                 val realError = if (e is java.util.concurrent.ExecutionException) e.cause ?: e else e
-                _firebaseSyncStatus.value = "Force Upload failed: ${realError.message}"
+                _firebaseSyncStatus.value = "Firestore Sync Error: ${realError.message}"
             } finally {
                 _isSyncing.value = false
             }
+        }
+    }
+
+    fun verifyOrInitRtdbPassword(
+        enteredPassword: String,
+        onResult: (Boolean, String) -> Unit
+    ) {
+        val trimmedInput = enteredPassword.trim()
+        if (trimmedInput.isEmpty()) {
+            onResult(false, "Please enter the password.")
+            return
+        }
+        try {
+            val rtdb = FirebaseDatabase.getInstance(com.example.util.SecureConfig.firebaseDatabaseUrl)
+            val ref = rtdb.getReference("app_password")
+            ref.get().addOnSuccessListener { snapshot ->
+                if (!snapshot.exists() || snapshot.value == null) {
+                    ref.setValue("0").addOnCompleteListener {
+                        onResult(
+                            false,
+                            "Password branch 'app_password' has been created in Firebase RTDB with value 0. Please change its value from 0 in the Firebase RTDB console and try again."
+                        )
+                    }
+                } else {
+                    val remoteValue = snapshot.value.toString().trim()
+                    if (remoteValue == "0" || remoteValue.isEmpty()) {
+                        onResult(
+                            false,
+                            "The password in Firebase RTDB ('app_password') is currently set to 0. Please change value 0 to your desired password in the Firebase RTDB console."
+                        )
+                    } else if (remoteValue == trimmedInput) {
+                        onResult(true, "")
+                    } else {
+                        onResult(false, "Incorrect password. Please match the password in Firebase RTDB.")
+                    }
+                }
+            }.addOnFailureListener { err ->
+                onResult(false, "Unable to verify password from RTDB: ${err.localizedMessage ?: "Network error"}")
+            }
+        } catch (e: Exception) {
+            onResult(false, "RTDB connection error: ${e.localizedMessage ?: "Unknown error"}")
         }
     }
 
@@ -1590,25 +1617,19 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                     .addOnCompleteListener { task ->
                         val fbEmail = task.result?.user?.email ?: userEmail
                         val finalDisplay = task.result?.user?.displayName?.takeIf { it.isNotBlank() } ?: nameToUse
-                        completeLoginSession(finalDisplay, fbEmail, null, onSuccess)
+                        completeLoginSession(finalDisplay, fbEmail, "ADMIN", onSuccess)
                     }
             } catch (e: Exception) {
-                completeLoginSession(nameToUse, userEmail, null, onSuccess)
+                completeLoginSession(nameToUse, userEmail, "ADMIN", onSuccess)
             }
         } else {
-            completeLoginSession(nameToUse, userEmail, null, onSuccess)
+            completeLoginSession(nameToUse, userEmail, "ADMIN", onSuccess)
         }
     }
 
     private fun completeLoginSession(displayName: String, email: String? = null, roleOverride: String? = null, onSuccess: () -> Unit) {
         val cleanEmail = email?.trim() ?: ""
-        val computedRole = roleOverride ?: if (cleanEmail.isNotBlank()) {
-            determineRoleForEmail(cleanEmail)
-        } else if (displayName.equals(com.example.util.SecureConfig.adminUsername, ignoreCase = true) || displayName.equals("muneeswaran", ignoreCase = true) || displayName.equals("Demo", ignoreCase = true)) {
-            "ADMIN"
-        } else {
-            "USER"
-        }
+        val computedRole = "ADMIN"
 
         prefs.edit().apply {
             putBoolean("is_logged_in", true)
@@ -1628,6 +1649,28 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
 
         AppDatabase.resetDatabaseInstances()
         db = com.example.data.DatabaseProvider.getDatabase(getApplication())
+        com.example.network.CloudLedgerSyncEngine.initializeDevicePresenceAndTriggers(
+            context = getApplication(),
+            db = db,
+            onStatusUpdate = { msg -> _firebaseSyncStatus.value = msg }
+        )
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                isReconcilingMaster.value = true
+                reconciliationProgress.value = "Synchronizing local & Cloud Firestore data..."
+                val msg = com.example.network.CloudLedgerSyncEngine.reconcileWithCloud(
+                    context = getApplication(),
+                    db = db,
+                    forceFullMigrationCheck = false,
+                    onProgress = { p -> reconciliationProgress.value = p }
+                )
+                _firebaseSyncStatus.value = msg
+            } catch (e: Exception) {
+                _firebaseSyncStatus.value = "Local Ready (${e.localizedMessage ?: "Offline"})"
+            } finally {
+                isReconcilingMaster.value = false
+            }
+        }
         onSuccess()
     }
 
@@ -1772,17 +1815,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun updateUserRole(role: String) {
-        val currentEmail = prefs.getString("current_email", "") ?: ""
-        val currentUserVal = _currentUser.value
-        val targetRole = if (role == "ADMIN") {
-            if (currentEmail.equals("muneeswaran45@gmail.com", ignoreCase = true) || currentUserVal.equals(com.example.util.SecureConfig.adminUsername, ignoreCase = true) || currentUserVal == "Demo") {
-                "ADMIN"
-            } else {
-                "USER"
-            }
-        } else {
-            "USER"
-        }
+        val targetRole = "ADMIN"
         prefs.edit().putString("current_role", targetRole).apply()
         _currentUserRole.value = targetRole
         AppDatabase.resetDatabaseInstances()
@@ -1810,18 +1843,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                                 val bytes = inputStream.readBytes()
                                 stringContent = String(bytes, java.nio.charset.StandardCharsets.UTF_8).trim()
                             } else {
-                                if (_isDemoMode.value) {
-                                    stringContent = "" // allow empty in demo mode
-                                } else {
-                                    val rtdb = FirebaseDatabase.getInstance(com.example.util.SecureConfig.firebaseDatabaseUrl)
-                                    val ref = rtdb.getReference("ledger_csv")
-                                    val snapshot = com.google.android.gms.tasks.Tasks.await(ref.get())
-                                    val cloudCsv = snapshot.value as? String
-                                    if (cloudCsv.isNullOrBlank()) {
-                                        throw Exception("No backup file selected and no backup found in Cloud.")
-                                    }
-                                    stringContent = cloudCsv.trim()
-                                }
+                                stringContent = ""
                             }
 
                             var success = true
@@ -1837,27 +1859,13 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
 
                             if (success) {
                                 triggerDatabaseRescanAndRepair()
-                                
-                                // 2. Revise cloud data too accordingly
-                                val customersList = db.collectionDao().getAllCustomersOnce()
-                                val loanCyclesList = db.collectionDao().getAllLoanCyclesOnce()
-                                val paymentsList = db.collectionDao().getAllPaymentsOnce()
-                                val cashBalanceLogsList = db.collectionDao().getAllCashBalanceLogsOnce()
-
-                                val csvString = com.example.util.CsvBackupHelper.generateCsvString(
-                                    customers = customersList,
-                                    loanCycles = loanCyclesList,
-                                    payments = paymentsList,
-                                    dayFilter = "ALL",
-                                    cashBalanceLogs = cashBalanceLogsList
-                                )
-                                
                                 if (!offlineModeEnabled.value) {
                                     try {
-                                        val rtdb = FirebaseDatabase.getInstance(com.example.util.SecureConfig.firebaseDatabaseUrl)
-                                        val ref = rtdb.getReference("ledger_csv")
-                                        val task = ref.setValue(csvString)
-                                        com.google.android.gms.tasks.Tasks.await(task)
+                                        com.example.network.CloudLedgerSyncEngine.reconcileWithCloud(
+                                            context = appCtx,
+                                            db = db,
+                                            forceFullMigrationCheck = true
+                                        )
                                     } catch (e: Exception) {
                                         e.printStackTrace()
                                     }
@@ -2324,9 +2332,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                 }
 
                 if (databaseChanged) {
-                    val currentBackupJson = getFullBackupJson()
-                    _liveCloudJson.value = currentBackupJson
-                    runMasterComparisonCheck(currentBackupJson, "Auto Rounding Migration")
+                    recalibrateCalculationsSilent()
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -2341,24 +2347,22 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         }
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             try {
-                val currentLoggedInUser = currentUser.value.trim()
-                val currentRole = prefs.getString("current_role", "USER") ?: "USER"
-                val isAdmin = currentRole.trim().uppercase(Locale.US) == "ADMIN" || currentLoggedInUser.equals(com.example.util.SecureConfig.adminUsername, ignoreCase = true)
-                if (!isAdmin) {
-                    throw Exception("Only Main Device is authorized to update the Master Database.")
-                }
-
                 _isExportImportLoading.value = true
-                val currentBackupJson = getFullBackupJson()
-                _liveCloudJson.value = currentBackupJson
-                
+                val summary = com.example.network.CloudLedgerSyncEngine.reconcileWithCloud(
+                    context = getApplication(),
+                    db = db,
+                    forceFullMigrationCheck = true,
+                    onProgress = { msg -> _firebaseSyncStatus.value = msg }
+                )
+                _firebaseSyncStatus.value = summary
+
                 viewModelScope.launch(kotlinx.coroutines.Dispatchers.Main) {
                     onSuccess()
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
                 viewModelScope.launch(kotlinx.coroutines.Dispatchers.Main) {
-                    onError(e.message ?: "Failed to save local master.")
+                    onError(e.message ?: "Failed to sync master with Cloud Firestore.")
                 }
             } finally {
                 _isExportImportLoading.value = false
@@ -2464,7 +2468,66 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         previousPayloadJson: String = "",
         actionUuid: String = java.util.UUID.randomUUID().toString()
     ) {
-        // App is complete offline, bypass cloud synchronization outbox
+        if (isRestoringFromJson || _isDemoMode.value) return
+        if (actionType == "EDIT_PREFERENCES" || actionType == "CLEAR_DATABASE") return
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                val obj = try { org.json.JSONObject(payloadJson) } catch (_: Exception) { org.json.JSONObject() }
+                val mapped: List<String> = when (actionType) {
+                    "CREATE_CUSTOMER", "EDIT_CUSTOMER" -> {
+                        val u = obj.optString("uuid").ifBlank { actionUuid }
+                        val day = obj.optString("collectionDay", selectedDay.value)
+                        listOf("CUSTOMER", u, u, day, "UPSERT")
+                    }
+                    "DELETE_CUSTOMER" -> {
+                        val u = obj.optString("customerUuid").ifBlank { actionUuid }
+                        listOf("CUSTOMER", u, u, selectedDay.value, "DELETE")
+                    }
+                    "CREATE_LOAN", "EDIT_LOAN" -> {
+                        val u = obj.optString("uuid").ifBlank { actionUuid }
+                        val cu = obj.optString("customerUuid")
+                        listOf("LOAN_CYCLE", u, cu, selectedDay.value, "UPSERT")
+                    }
+                    "DELETE_LOAN" -> {
+                        val u = obj.optString("loanUuid").ifBlank { actionUuid }
+                        listOf("LOAN_CYCLE", u, "", selectedDay.value, "DELETE")
+                    }
+                    "RECORD_PAYMENT", "EDIT_PAYMENT" -> {
+                        val u = obj.optString("uuid").ifBlank { actionUuid }
+                        val lu = obj.optString("loanUuid")
+                        listOf("WEEKLY_PAYMENT", u, lu, selectedDay.value, "UPSERT")
+                    }
+                    "DELETE_PAYMENT" -> {
+                        val u = obj.optString("paymentUuid").ifBlank { actionUuid }
+                        val lu = obj.optString("loanUuid")
+                        listOf("WEEKLY_PAYMENT", u, lu, selectedDay.value, "DELETE")
+                    }
+                    else -> emptyList()
+                }
+                if (mapped.size == 5) {
+                    val entityType = mapped[0]
+                    val entityUuid = mapped[1]
+                    val custUuid = mapped[2]
+                    val colDay = mapped[3]
+                    val action = mapped[4]
+                    if (entityType.isNotEmpty() && entityUuid.isNotEmpty()) {
+                        com.example.network.CloudLedgerSyncEngine.enqueueOfflineOrLiveEdit(
+                            context = getApplication(),
+                            db = db,
+                            entityType = entityType,
+                            entityUuid = entityUuid,
+                            customerUuid = custUuid,
+                            collectionDay = colDay,
+                            action = action,
+                            timestamp = System.currentTimeMillis(),
+                            summary = actionType
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
     }
 
     fun setSimSelection(sim: String) {
@@ -2789,50 +2852,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     }
 
     suspend fun triggerAutoBackupIfNeeded() {
-        val isEnabled = prefs.getBoolean("auto_backup_enabled", true)
-        if (!isEnabled) return
-
-        val todayStr = autoBackupDateFormatter.format(java.util.Date())
-        val lastBackupDate = prefs.getString("last_auto_backup_date", "") ?: ""
-        if (lastBackupDate == todayStr) {
-            return
-        }
-
-        if (!isNetworkAvailable()) {
-            return
-        }
-
-        if (!isAutoBackupRunning.compareAndSet(false, true)) {
-            return
-        }
-
-        try {
-            val customersList = db.collectionDao().getAllCustomersOnce()
-            val loanCyclesList = db.collectionDao().getAllLoanCyclesOnce()
-            val paymentsList = db.collectionDao().getAllPaymentsOnce()
-            val cashBalanceLogsList = db.collectionDao().getAllCashBalanceLogsOnce()
-
-            val csvContent = com.example.util.CsvBackupHelper.generateCsvString(
-                customers = customersList,
-                loanCycles = loanCyclesList,
-                payments = paymentsList,
-                dayFilter = "ALL",
-                cashBalanceLogs = cashBalanceLogsList
-            )
-
-            val (success, responseString) = uploadCsvToFirebaseStorage(csvContent, isManual = false)
-            if (success) {
-                prefs.edit().putString("last_auto_backup_date", todayStr).apply()
-                android.util.Log.d("AutoBackup", "Auto backup to Firebase Storage succeeded: $responseString")
-            } else {
-                android.util.Log.w("AutoBackup", "Auto backup to Firebase Storage skipped or unavailable: $responseString")
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-            android.util.Log.w("AutoBackup", "Note during auto backup: ${e.message}")
-        } finally {
-            isAutoBackupRunning.set(false)
-        }
+        // Automatic Google Drive / Cloud Excel backups are removed as requested.
     }
 
     private suspend fun uploadCsvToFirebaseStorage(csvContent: String, isManual: Boolean): Pair<Boolean, String> = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
@@ -2855,13 +2875,10 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
             val fileName = "finance_all_backup_$formattedTime.csv"
             val bytes = csvContent.toByteArray(Charsets.UTF_8)
 
-            val datedRef = storage.reference.child("csv_backups/$fileName")
-            com.google.android.gms.tasks.Tasks.await(datedRef.putBytes(bytes))
-
             val latestRef = storage.reference.child("csv_backups/finance_all_latest_backup.csv")
             com.google.android.gms.tasks.Tasks.await(latestRef.putBytes(bytes))
 
-            Pair(true, "Firebase Storage bucket file saved: $fileName")
+            Pair(true, "Firebase Storage bucket file saved: finance_all_latest_backup.csv")
         } catch (e: Exception) {
             android.util.Log.w("FirebaseStorage", "Firebase Storage upload note: ${e.message}")
             Pair(false, e.localizedMessage ?: "Firebase Storage upload error")
@@ -3675,9 +3692,14 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                     upiNameAlias = upiNameAlias,
                     preferredLanguage = preferredLanguage
                 )
+                // Skip database & network sync if no fields actually changed
+                if (existing == updatedObj) return@launch
+
                 val updatedJson = customerToJson(updatedObj)
                 repository.updateCustomer(updatedObj)
-                if (googleContactsSelectedAccount.value.isNotBlank()) {
+                if (googleContactsSelectedAccount.value.isNotBlank() &&
+                    (existing.name != updatedObj.name || existing.phone != updatedObj.phone || existing.phone2 != updatedObj.phone2)
+                ) {
                     val email = googleContactsSelectedAccount.value
                     viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
                         val success = com.example.util.GoogleContactsSyncHelper.syncCustomerToGoogleContacts(
@@ -3711,7 +3733,6 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                     )
                 )
                 createOrUpdateCustomerFiles(customerId)
-                markDirty()
             }
         }
     }
@@ -3786,8 +3807,12 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                 val prevOrder = prevInDay.customOrder
                 val selfOrder = item.customer.customOrder
 
-                repository.updateCustomerOrder(item.customer.id, prevOrder)
-                repository.updateCustomerOrder(prevInDay.id, selfOrder)
+                if (prevOrder != selfOrder) {
+                    repository.updateCustomerOrder(item.customer.id, prevOrder)
+                    repository.updateCustomerOrder(prevInDay.id, selfOrder)
+                    pushFirebaseEditLog("EDIT_CUSTOMER", customerToJson(item.customer.copy(customOrder = prevOrder)), "", item.customer.uuid)
+                    pushFirebaseEditLog("EDIT_CUSTOMER", customerToJson(prevInDay.copy(customOrder = selfOrder)), "", prevInDay.uuid)
+                }
             }
         }
     }
@@ -3805,8 +3830,12 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                 val nextOrder = nextInDay.customOrder
                 val selfOrder = item.customer.customOrder
 
-                repository.updateCustomerOrder(item.customer.id, nextOrder)
-                repository.updateCustomerOrder(nextInDay.id, selfOrder)
+                if (nextOrder != selfOrder) {
+                    repository.updateCustomerOrder(item.customer.id, nextOrder)
+                    repository.updateCustomerOrder(nextInDay.id, selfOrder)
+                    pushFirebaseEditLog("EDIT_CUSTOMER", customerToJson(item.customer.copy(customOrder = nextOrder)), "", item.customer.uuid)
+                    pushFirebaseEditLog("EDIT_CUSTOMER", customerToJson(nextInDay.copy(customOrder = selfOrder)), "", nextInDay.uuid)
+                }
             }
         }
     }
@@ -3823,10 +3852,16 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
 
             val itemToMove = listForDay.removeAt(currentIndex)
             val targetIndex = (targetPosition - 1).coerceIn(0, listForDay.size)
+            if (currentIndex == targetIndex) return@launch
             listForDay.add(targetIndex, itemToMove)
 
+            // Only update and sync customers whose customOrder actually changed!
             listForDay.forEachIndexed { i, customer ->
-                repository.updateCustomerOrder(customer.id, i + 1)
+                val newOrder = i + 1
+                if (customer.customOrder != newOrder) {
+                    repository.updateCustomerOrder(customer.id, newOrder)
+                    pushFirebaseEditLog("EDIT_CUSTOMER", customerToJson(customer.copy(customOrder = newOrder)), "", customer.uuid)
+                }
             }
         }
     }
@@ -3987,6 +4022,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                     startDate = startDate ?: existing.startDate,
                     deduction = deduction
                 )
+                if (existing == updatedLoan) return@launch
                 val updatedJson = loanCycleToJson(updatedLoan)
                 repository.updateLoanCycle(updatedLoan)
                 val customer = repository.getCustomerById(existing.customerId)
@@ -4006,8 +4042,51 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                         previousDataJson = previousJson
                     )
                 )
-                markDirty()
             }
+        }
+    }
+
+    /**
+     * Ensures that ONLY paid installments (`amountPaid > 0.0`) receive sequential week numbers (`1, 2, 3...`),
+     * while any unpaid/nil record (`amountPaid <= 0.0` or `UNPAID`) is strictly stored with `weekNumber = 0`.
+     */
+    private suspend fun resequencePaidWeeksForLoanCycle(loanCycleId: Int) {
+        try {
+            val dao = db.collectionDao()
+            val cyclePayments = dao.getPaymentsForCycleOnce(loanCycleId)
+                .filter { !it.status.equals("DELETED", ignoreCase = true) }
+                .sortedWith(compareBy<WeeklyPayment> { it.paymentDate }.thenBy { it.id })
+
+            var paidCounter = 0
+            for (p in cyclePayments) {
+                if (p.amountPaid <= 0.0 || p.notes.equals("UNPAID", ignoreCase = true)) {
+                    if (p.weekNumber != 0 || !p.notes.equals("UNPAID", ignoreCase = true)) {
+                        dao.insertPayment(p.copy(weekNumber = 0, notes = "UNPAID", amountPaid = 0.0))
+                    }
+                } else {
+                    paidCounter++
+                    if (p.weekNumber != paidCounter) {
+                        dao.insertPayment(p.copy(weekNumber = paidCounter))
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    /**
+     * 60-Second Duplicate Payment Guard: returns true if an identical payment amount was already
+     * recorded for this loan cycle within the last 60 seconds.
+     */
+    fun hasDuplicatePaymentInLast60Seconds(loanCycleId: Int, amount: Double): Boolean {
+        if (amount <= 0.0) return false
+        val now = System.currentTimeMillis()
+        return allPayments.value.any { p ->
+            p.loanCycleId == loanCycleId &&
+                !p.status.equals("DELETED", ignoreCase = true) &&
+                kotlin.math.abs(p.amountPaid - amount) < 0.01 &&
+                (now - p.paymentDate) in 0..60_000L
         }
     }
 
@@ -4023,23 +4102,26 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     ) {
         val appCtx = getApplication<Application>()
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            val actualWeekNum = if (weekNum > 0) {
-                weekNum
+            val isUnpaid = amount <= 0.0 || notes.equals("UNPAID", ignoreCase = true)
+            val actualWeekNum = if (isUnpaid) {
+                0 // Unpaid weeks always have nil (0) week number
             } else {
-                val cyclePayments = allPayments.value.filter { 
-                    it.loanCycleId == loanCycleId && it.status.uppercase() != "DELETED" && it.amountPaid > 0.0 && it.weekNumber > 0 
+                val paidCount = db.collectionDao().getPaymentsForCycleOnce(loanCycleId).count {
+                    !it.status.equals("DELETED", ignoreCase = true) && it.amountPaid > 0.0
                 }
-                (cyclePayments.maxOfOrNull { it.weekNumber } ?: 0) + 1
+                paidCount + 1
             }
+            val finalNotes = if (isUnpaid) "UNPAID" else notes
             val wp = WeeklyPayment(
                 loanCycleId = loanCycleId,
-                amountPaid = amount,
+                amountPaid = if (isUnpaid) 0.0 else amount,
                 weekNumber = actualWeekNum,
                 paymentDate = paymentDate,
-                notes = notes,
+                notes = finalNotes,
                 timeVerificationStatus = timeVerificationStatus
             )
             val paymentId = repository.addWeeklyPayment(wp)
+            resequencePaidWeeksForLoanCycle(loanCycleId)
 
             // Trigger payment confirmation automatically
             val loan = repository.getLoanCycleById(loanCycleId)
@@ -4056,7 +4138,11 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                             customerId = customer.id,
                             customerName = customer.name,
                             actionType = "RECORD_PAYMENT",
-                            actionDescription = "Recorded ₹$amount payment for week $actualWeekNum of ${customer.name}",
+                            actionDescription = if (isUnpaid) {
+                                "Marked week as UNPAID (₹0) for ${customer.name}"
+                            } else {
+                                "Recorded ₹$amount payment for week $actualWeekNum of ${customer.name}"
+                            },
                             previousDataJson = paymentId.toString()
                         )
                     )
@@ -4084,17 +4170,24 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
             val existingP = allP.find { it.id == paymentId }
             val previousJson = if (existingP != null) weeklyPaymentToJson(existingP) else ""
 
+            val isUnpaid = amount <= 0.0 || notes.equals("UNPAID", ignoreCase = true)
+            val effectiveWeekNum = if (isUnpaid) 0 else weekNum
+            val effectiveNotes = if (isUnpaid) "UNPAID" else notes
+            val effectiveAmount = if (isUnpaid) 0.0 else amount
+
             val updatedP = WeeklyPayment(
                 id = paymentId,
                 loanCycleId = loanCycleId,
-                amountPaid = amount,
-                weekNumber = weekNum,
+                amountPaid = effectiveAmount,
+                weekNumber = effectiveWeekNum,
                 paymentDate = paymentDate,
-                notes = notes,
+                notes = effectiveNotes,
                 uuid = existingP?.uuid ?: java.util.UUID.randomUUID().toString()
             )
             val updatedJson = weeklyPaymentToJson(updatedP)
-            repository.updateWeeklyPayment(paymentId, loanCycleId, amount, weekNum, paymentDate, notes)
+            repository.updateWeeklyPayment(paymentId, loanCycleId, effectiveAmount, effectiveWeekNum, paymentDate, effectiveNotes)
+            resequencePaidWeeksForLoanCycle(loanCycleId)
+
             val loan = repository.getLoanCycleById(loanCycleId)
             if (loan != null) {
                 val customer = repository.getCustomerById(loan.customerId)
@@ -4110,12 +4203,12 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
                             customerId = customer.id,
                             customerName = customer.name,
                             actionType = "EDIT_PAYMENT",
-                            actionDescription = "Updated payment of week $weekNum (to ₹$amount) for ${customer.name}: ${changeInfo.second}",
+                            actionDescription = "Updated payment of week $effectiveWeekNum (to ₹$effectiveAmount) for ${customer.name}: ${changeInfo.second}",
                             previousDataJson = previousJson
                         )
                     )
-                    if (customer.smsConfirmationOfEntry && amount > 0.0) {
-                        triggerPaymentEntrySms(appCtx, customer, loan, amount, weekNum)
+                    if (customer.smsConfirmationOfEntry && effectiveAmount > 0.0) {
+                        triggerPaymentEntrySms(appCtx, customer, loan, effectiveAmount, effectiveWeekNum)
                     }
                 }
             }
@@ -4269,6 +4362,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
             val customerIdObj = loan?.customerId ?: 0
 
             repository.removeWeeklyPayment(paymentId, loanCycleId)
+            resequencePaidWeeksForLoanCycle(loanCycleId)
             val targetUuid = existingP?.uuid
             if (targetUuid != null && loan != null && !isSyncingFromFirebase) {
                 val pLoad = org.json.JSONObject().apply {
@@ -4963,7 +5057,7 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
         backupObj.put("meta_loans_count", loanCyclesList.size)
         backupObj.put("meta_payments_count", paymentsList.size)
 
-        backupObj.toString(4)
+        backupObj.toString()
     }
 
     fun applyManualJsonEdit(jsonStr: String, onSuccess: () -> Unit, onError: (String) -> Unit) {
@@ -6505,29 +6599,18 @@ class FinanceViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun logout(onComplete: () -> Unit = {}) {
-        val currentRole = prefs.getString("current_role", "USER") ?: "USER"
-        val isAdmin = currentRole.trim().uppercase(java.util.Locale.US) == "ADMIN" || currentUser.value.equals(com.example.util.SecureConfig.adminUsername, ignoreCase = true)
-
-        if (isAdmin && !offlineModeEnabled.value) {
+        if (!offlineModeEnabled.value) {
             viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
                 try {
-                    val customersList = db.collectionDao().getAllCustomersOnce()
-                    val loanCyclesList = db.collectionDao().getAllLoanCyclesOnce()
-                    val paymentsList = db.collectionDao().getAllPaymentsOnce()
-                    val cashBalanceLogsList = db.collectionDao().getAllCashBalanceLogsOnce()
-
-                    val csvContent = com.example.util.CsvBackupHelper.generateCsvString(
-                        customers = customersList,
-                        loanCycles = loanCyclesList,
-                        payments = paymentsList,
-                        dayFilter = "ALL",
-                        cashBalanceLogs = cashBalanceLogsList
+                    // Flush only pending delta edits before logout instead of uploading the entire CSV database twice!
+                    com.example.network.CloudLedgerSyncEngine.flushPendingEditsWithConflictCheck(
+                        context = getApplication(),
+                        db = db
                     )
-                    uploadCsvToFirebaseStorage(csvContent, isManual = true)
+                    com.example.network.CloudLedgerSyncEngine.updateDeviceOnlineStatus(getApplication(), false)
                 } catch (e: Exception) {
                     e.printStackTrace()
                 }
-                
                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                     performLocalLogout()
                     onComplete()

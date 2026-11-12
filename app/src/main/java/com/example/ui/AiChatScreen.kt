@@ -276,25 +276,31 @@ fun AiChatScreen(viewModel: FinanceViewModel) {
         }
     }
 
+    val activeChatLang = if (isTamilTalk) "Tamil" else "English"
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
-                    Column {
+                    Column(verticalArrangement = Arrangement.Center) {
                         Text(
-                            text = translate("Easwar AI Assistant", language),
-                            fontSize = 18.sp,
+                            text = if (isTamilTalk) "ஈஸ்வர் AI உதவியாளர்" else "Easwar AI Assistant",
+                            fontSize = 17.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Color.White
+                            color = Color.White,
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                         )
                         Text(
                             text = if (offlineModeEnabled) {
-                                translate("Offline mode active", language)
+                                if (isTamilTalk) "ஆஃப்லைன் பயன்முறை" else "Offline mode active"
                             } else {
-                                translate("Online microfinance companion", language)
+                                if (isTamilTalk) "ஆன்லைன் நிதி உதவியாளர்" else "Online microfinance companion"
                             },
                             fontSize = 11.sp,
-                            color = if (offlineModeEnabled) Color(0xFFFDA4AF) else Color(0xFF6EE7B7)
+                            color = if (offlineModeEnabled) Color(0xFFFDA4AF) else Color(0xFF6EE7B7),
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                         )
                     }
                 },
@@ -334,7 +340,7 @@ fun AiChatScreen(viewModel: FinanceViewModel) {
                             viewModel.setAiSpeechLanguage(newLang)
                             Toast.makeText(
                                 context,
-                                "Voice set to: $newLang",
+                                if (newLang == "Tamil") "மொழி: தமிழ்" else "Language: English",
                                 Toast.LENGTH_SHORT
                             ).show()
                         }
@@ -343,10 +349,10 @@ fun AiChatScreen(viewModel: FinanceViewModel) {
                             text = if (isTamilTalk) "அ" else "En",
                             color = Color.White,
                             fontWeight = FontWeight.Bold,
-                            fontSize = 16.sp,
+                            fontSize = 15.sp,
                             modifier = Modifier
-                                .background(Color.White.copy(alpha = 0.2f), RoundedCornerShape(4.dp))
-                                .padding(horizontal = 4.dp, vertical = 2.dp)
+                                .background(Color.White.copy(alpha = 0.2f), RoundedCornerShape(6.dp))
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
                         )
                     }
 
@@ -354,7 +360,11 @@ fun AiChatScreen(viewModel: FinanceViewModel) {
                     IconButton(
                         onClick = {
                             viewModel.clearAiChat()
-                            Toast.makeText(context, "History Cleared!", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(
+                                context,
+                                if (isTamilTalk) "உரையாடல் அழிக்கப்பட்டது!" else "History Cleared!",
+                                Toast.LENGTH_SHORT
+                            ).show()
                         },
                         modifier = Modifier.testTag("ai_chat_clear_button")
                     ) {
@@ -606,7 +616,7 @@ fun AiChatScreen(viewModel: FinanceViewModel) {
                         color = appColors.primaryAccent
                     )
                     Text(
-                        text = translate("Easwar is analyzing data...", language),
+                        text = if (isTamilTalk) "ஈஸ்வர் தரவை ஆராய்கிறார்..." else "Easwar is analyzing data...",
                         fontSize = 12.sp,
                         color = Color.Gray
                     )
@@ -635,7 +645,7 @@ fun AiChatScreen(viewModel: FinanceViewModel) {
                             if (offlineModeEnabled) {
                                 Toast.makeText(
                                     context,
-                                    translate("Voice recognizer is not available offline", language),
+                                    if (isTamilTalk) "ஆஃப்லைனில் குரல் பதிவு இயங்காது" else "Voice recognizer is not available offline",
                                     Toast.LENGTH_SHORT
                                 ).show()
                             } else {
@@ -671,7 +681,7 @@ fun AiChatScreen(viewModel: FinanceViewModel) {
                         textStyle = LocalTextStyle.current.copy(color = Color.Black),
                         placeholder = {
                             Text(
-                                text = translate("Talk to Easwar...", language),
+                                text = if (isTamilTalk) "ஈஸ்வரிடம் தமிழில் கேளுங்கள்..." else "Talk to Easwar...",
                                 fontSize = 14.sp,
                                 color = Color.Gray
                             )

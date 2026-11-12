@@ -64,7 +64,7 @@ class MainActivity : ComponentActivity() {
                 android.util.Log.w("MainActivity", "AppCheck provider skipped: ${e.message}")
             }
             try {
-                com.google.firebase.crashlytics.FirebaseCrashlytics.getInstance().setCrashlyticsCollectionEnabled(true)
+                com.google.firebase.crashlytics.FirebaseCrashlytics.getInstance().setCrashlyticsCollectionEnabled(false)
             } catch (e: Throwable) {
                 android.util.Log.w("MainActivity", "Crashlytics init note: ${e.message}")
             }
@@ -76,12 +76,12 @@ class MainActivity : ComponentActivity() {
         FirebaseConnectionManager.initializeSilentCloudConnection(
             onSuccess = {
                 Log.i("Main", "Cloud sync engine warmed up and standing by.")
-                FirebaseUpdateManager.checkForCloudUpdates(this@MainActivity, manualCheck = true)
+                FirebaseUpdateManager.checkForCloudUpdates(this@MainActivity, manualCheck = false)
                 
-                // Schedule unique periodic background update check every 1 hour
+                // Schedule unique periodic background update check every 6 hours
                 try {
                     val workRequest = androidx.work.PeriodicWorkRequestBuilder<com.example.service.AppUpdateWorker>(
-                        1, java.util.concurrent.TimeUnit.HOURS
+                        6, java.util.concurrent.TimeUnit.HOURS
                     ).build()
                     androidx.work.WorkManager.getInstance(this@MainActivity).enqueueUniquePeriodicWork(
                         "AppUpdatePeriodicCheck",
@@ -180,11 +180,6 @@ class MainActivity : ComponentActivity() {
 
   override fun onResume() {
     super.onResume()
-    try {
-      FirebaseUpdateManager.checkForCloudUpdates(this, manualCheck = true)
-    } catch (e: Exception) {
-      Log.e("Main", "OnResume update check failed: ${e.message}")
-    }
   }
 
   override fun onSaveInstanceState(outState: Bundle) {

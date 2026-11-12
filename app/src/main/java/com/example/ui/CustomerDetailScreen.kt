@@ -12,6 +12,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -24,6 +25,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -1130,27 +1132,13 @@ fun CustomerDetailScreen(
         }
     }
     val activeLoans = liveLoanCycles.filter { it.status == "ACTIVE" }
-    val currentTime = System.currentTimeMillis()
-    val seventyTwoHoursMs = 72 * 60 * 60 * 1000L
-    val paidHistory = liveLoanCycles.filter { lc ->
-        if (lc.status != "PAID") return@filter false
-        val cyclePayments = allPayments.filter { it.loanCycleId == lc.id && it.status.uppercase() != "DELETED" }
-        val lastPaymentTime = cyclePayments.maxByOrNull { it.paymentDate }?.paymentDate ?: lc.lastModified
-        val completionTime = if (lastPaymentTime > 0) lastPaymentTime else lc.lastModified
-        val ageMs = currentTime - completionTime
-        ageMs < seventyTwoHoursMs
+    val paidHistory = remember(liveLoanCycles) {
+        liveLoanCycles.filter { lc ->
+            (lc.status == "PAID" || lc.status == "CLOSED") && lc.status.uppercase() != "DELETED"
+        }.sortedByDescending { it.startDate }
     }
 
-    val closedLoans = remember(liveLoanCycles, paidHistory) {
-        val nonDeleted = liveLoanCycles.filter { 
-            (it.status == "PAID" || it.status == "CLOSED") && it.status.uppercase() != "DELETED" 
-        }
-        if (paidHistory.isNotEmpty()) {
-            paidHistory
-        } else {
-            nonDeleted
-        }
-    }
+    val closedLoans = paidHistory
     val coroutineScope = rememberCoroutineScope()
     var isGeneratingStatement by remember { mutableStateOf(false) }
     var showStatementChooserDialog by remember { mutableStateOf(false) }
@@ -1616,87 +1604,102 @@ fun CustomerDetailScreen(
                     )
                     .border(1.dp, appColors.headerCardBorder, RoundedCornerShape(16.dp))
             ) {
-                // Gradient box contents
+                // Gradient box contents with spacious 2x2 metric layout
                 Column(
-                    modifier = Modifier.padding(12.dp)
+                    modifier = Modifier.padding(16.dp)
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.Top
                     ) {
-                        Column {
-                            // "name of customer top left with green colour text"
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Text(
-                                    text = customer.name.uppercase(Locale.ROOT),
-                                    fontSize = 20.sp,
-                                    fontWeight = FontWeight.ExtraBold,
-                                    color = appColors.textOnHeader,
-                                    letterSpacing = 1.5.sp
-                                )
-                                if (activeLoan.id != -1 && activeLoans.size > 1) {
-                                    val loanIndex = allCustomerLoans.indexOfFirst { it.id == activeLoan.id }
-                                    Box(
-                                        modifier = Modifier
-                                            .background(Color.White.copy(alpha = 0.25f), RoundedCornerShape(8.dp))
-                                            .padding(horizontal = 8.dp, vertical = 4.dp)
-                                    ) {
-                                        Text(
-                                            text = "Loan ${loanIndex + 1}",
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = appColors.textOnHeader
-                                        )
-                                    }
-                                }
-                            }
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(end = 8.dp)
+                        ) {
+                            Text(
+                                text = customer.name.uppercase(Locale.ROOT),
+                                fontSize = if (customer.name.length > 20) 16.sp else 20.sp,
+                                lineHeight = if (customer.name.length > 20) 20.sp else 24.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = appColors.textOnHeader,
+                                letterSpacing = 1.0.sp,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
                             Spacer(modifier = Modifier.height(2.dp))
                             if (primaryPhone.isNotBlank() || secondaryPhone.isNotBlank()) {
                                 Text(
                                     text = if (hasTwoPhones) "Ph: $primaryPhone, $secondaryPhone" else "Ph: ${primaryPhone.ifBlank { secondaryPhone }}",
                                     fontSize = 11.sp,
-                                    color = if (appColors.isDark) Color.LightGray else appColors.textOnHeader.copy(alpha = 0.7f)
+                                    color = if (appColors.isDark) Color.LightGray else appColors.textOnHeader.copy(alpha = 0.7f),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+
+                        if (activeLoan.id != -1 && activeLoans.size > 1) {
+                            val loanIndex = allCustomerLoans.indexOfFirst { it.id == activeLoan.id }
+                            Box(
+                                modifier = Modifier
+                                    .wrapContentWidth()
+                                    .background(Color.White.copy(alpha = 0.25f), RoundedCornerShape(8.dp))
+                                    .border(1.dp, Color.White.copy(alpha = 0.35f), RoundedCornerShape(8.dp))
+                                    .padding(horizontal = 10.dp, vertical = 5.dp)
+                            ) {
+                                Text(
+                                    text = "Loan ${loanIndex + 1}",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = appColors.textOnHeader,
+                                    maxLines = 1
                                 )
                             }
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
 
-                    // Dividing Lime green animated progress bar between outstanding and principal+interest text
-                    val limeColor = Color(0xFF84CC16) // Lime Green
+                    // Dividing Lime green animated progress bar
+                    val limeColor = Color(0xFF84CC16)
                     LinearProgressIndicator(
                         progress = { progress.coerceIn(0f, 1f) },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(4.dp)
+                            .height(5.dp)
                             .clip(CircleShape),
                         color = limeColor,
                         trackColor = if (appColors.isDark) Color.White.copy(alpha = 0.2f) else appColors.textOnHeader.copy(alpha = 0.15f)
                     )
 
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
 
+                    // Row 1: Amt Receivable & Collected Amount in distinct spacious boxes
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // "amt receivable bottom left"
-                        Column(modifier = Modifier.weight(1f)) {
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .background(Color.White.copy(alpha = 0.08f), RoundedCornerShape(10.dp))
+                                .padding(horizontal = 12.dp, vertical = 10.dp)
+                        ) {
                             Text(
                                 text = translate("Amt Receivable", language),
-                                fontSize = 12.sp,
-                                color = if (appColors.isDark) Color.LightGray else appColors.textOnHeader.copy(alpha = 0.7f)
+                                fontSize = 11.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                color = if (appColors.isDark) Color.LightGray else appColors.textOnHeader.copy(alpha = 0.75f)
                             )
+                            Spacer(modifier = Modifier.height(2.dp))
                             AnimatedNumberText(
                                 targetValue = remaining,
                                 prefix = "₹",
-                                fontSize = 28.sp, // Prominent metric hierarchy
+                                fontSize = 22.sp,
                                 fontWeight = FontWeight.Black,
                                 color = appColors.textOnHeader,
                                 delayMillis = 0,
@@ -1704,63 +1707,84 @@ fun CustomerDetailScreen(
                             )
                         }
 
-                        // "amt disbursed principle+int format bottom right"
-                        Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.End) {
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .background(Color.White.copy(alpha = 0.08f), RoundedCornerShape(10.dp))
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            horizontalAlignment = Alignment.End
+                        ) {
                             Text(
                                 text = translate("Collected Amount", language),
-                                fontSize = 12.sp,
-                                color = if (appColors.isDark) Color.LightGray else appColors.textOnHeader.copy(alpha = 0.7f)
+                                fontSize = 11.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                color = if (appColors.isDark) Color.LightGray else appColors.textOnHeader.copy(alpha = 0.75f)
                             )
+                            Spacer(modifier = Modifier.height(2.dp))
                             AnimatedNumberText(
                                 targetValue = activeLoan.paidAmount,
                                 prefix = "₹",
-                                fontSize = 16.sp,
+                                fontSize = 20.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = appColors.textOnHeader,
+                                color = Color(0xFF4ADE80),
                                 delayMillis = 150,
                                 durationMillis = 1600
                             )
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(6.dp))
-                    HorizontalDivider(
-                        color = if (appColors.isDark) Color.DarkGray else appColors.textOnHeader.copy(alpha = 0.15f),
-                        thickness = 0.5.dp
-                    )
-                    Spacer(modifier = Modifier.height(6.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
 
+                    // Row 2: Borrowed Principal & Weekly Interest in distinct spacious boxes
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .background(Color.White.copy(alpha = 0.06f), RoundedCornerShape(10.dp))
+                                .padding(horizontal = 12.dp, vertical = 8.dp)
+                        ) {
                             Text(
                                 text = translate("Borrowed Principal", language),
-                                fontSize = 11.sp,
-                                color = if (appColors.isDark) Color.LightGray else appColors.textOnHeader.copy(alpha = 0.7f)
+                                fontSize = 10.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                color = if (appColors.isDark) Color.LightGray else appColors.textOnHeader.copy(alpha = 0.75f)
                             )
+                            Spacer(modifier = Modifier.height(2.dp))
                             AnimatedNumberText(
                                 targetValue = activeLoan.loanAmount,
                                 prefix = "₹",
-                                fontSize = 14.sp,
+                                fontSize = 15.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = appColors.textOnHeader,
                                 delayMillis = 300,
                                 durationMillis = 1600
                             )
                         }
-                        Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.End) {
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .background(Color.White.copy(alpha = 0.06f), RoundedCornerShape(10.dp))
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            horizontalAlignment = Alignment.End
+                        ) {
                             Text(
                                 text = translate("Weekly Interest", language),
-                                fontSize = 11.sp,
-                                color = if (appColors.isDark) Color.LightGray else appColors.textOnHeader.copy(alpha = 0.7f)
+                                fontSize = 10.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                color = if (appColors.isDark) Color.LightGray else appColors.textOnHeader.copy(alpha = 0.75f)
                             )
+                            Spacer(modifier = Modifier.height(2.dp))
                             AnimatedNumberText(
                                 targetValue = activeLoan.interestAmount,
                                 prefix = "₹",
-                                fontSize = 14.sp,
+                                fontSize = 15.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = appColors.textOnHeader,
                                 delayMillis = 450,
@@ -1768,8 +1792,6 @@ fun CustomerDetailScreen(
                             )
                         }
                     }
-
-                    // Last payment info removed per request
                 }
             }
 
@@ -1974,18 +1996,80 @@ fun CustomerDetailScreen(
         Spacer(modifier = Modifier.height(12.dp))
 
         // Tab Content
+        var selectedActiveLoanFilterId by rememberSaveable(customer.id) { mutableStateOf<Int?>(null) }
+        var archivedCloudHistory by remember(customer.uuid) {
+            mutableStateOf<List<com.example.network.ArchivedPastLoanItem>>(emptyList())
+        }
+        var isLoadingArchivedHistory by remember(customer.uuid) { mutableStateOf(false) }
+        val customAppLogo by viewModel.customAppLogo.collectAsStateWithLifecycle()
+
+        LaunchedEffect(activeTab, customer.uuid) {
+            if (activeTab == 1 && customer.uuid.isNotBlank()) {
+                isLoadingArchivedHistory = true
+                archivedCloudHistory = com.example.network.CloudLedgerSyncEngine.fetchArchivedPastHistoryForCustomer(customer.uuid)
+                isLoadingArchivedHistory = false
+            }
+        }
+
         if (activeTab == 0) {
             if (activeLoans.isNotEmpty()) {
                 Column(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    if (currentUserRole != "USER") {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.End,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (activeLoans.size > 1) {
+                            Row(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                val allSelected = selectedActiveLoanFilterId == null
+                                Surface(
+                                    onClick = { selectedActiveLoanFilterId = null },
+                                    shape = RoundedCornerShape(16.dp),
+                                    color = if (allSelected) appColors.primaryAccent else Color(0xFFF1F5F9),
+                                    border = BorderStroke(1.dp, if (allSelected) appColors.primaryAccent else Color(0xFFCBD5E1))
+                                ) {
+                                    Text(
+                                        text = "All (${activeLoans.size})",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (allSelected) Color.White else ColorSlateDark,
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                                    )
+                                }
+                                val allCustomerLoansSorted = remember(loanCycles) { loanCycles.sortedBy { it.id } }
+                                activeLoans.forEach { loanItem ->
+                                    val idx = allCustomerLoansSorted.indexOfFirst { it.id == loanItem.id }
+                                    val isSel = selectedActiveLoanFilterId == loanItem.id
+                                    Surface(
+                                        onClick = { selectedActiveLoanFilterId = if (isSel) null else loanItem.id },
+                                        shape = RoundedCornerShape(16.dp),
+                                        color = if (isSel) appColors.primaryAccent else Color(0xFFF1F5F9),
+                                        border = BorderStroke(1.dp, if (isSel) appColors.primaryAccent else Color(0xFFCBD5E1))
+                                    ) {
+                                        Text(
+                                            text = "Loan ${idx + 1}",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (isSel) Color.White else ColorSlateDark,
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        } else {
+                            Spacer(modifier = Modifier.weight(1f))
+                        }
+
+                        if (currentUserRole != "USER") {
                             Button(
                                 onClick = { viewModel.navigateTo(Screen.AddLoan(customer.id)) },
                                 colors = ButtonDefaults.buttonColors(containerColor = ColorAccentBlue),
@@ -1998,7 +2082,13 @@ fun CustomerDetailScreen(
                             }
                         }
                     }
-                    activeLoans.forEach { targetActiveLoan ->
+
+                    val displayedActiveLoans = remember(activeLoans, selectedActiveLoanFilterId) {
+                        if (selectedActiveLoanFilterId == null) activeLoans
+                        else activeLoans.filter { it.id == selectedActiveLoanFilterId }.ifEmpty { activeLoans }
+                    }
+
+                    displayedActiveLoans.forEach { targetActiveLoan ->
                         val activePayments = customerPayments.filter { it.loanCycleId == targetActiveLoan.id }
                         val allCustomerLoansSorted = remember(loanCycles) { loanCycles.sortedBy { it.id } }
                         val loanIndex = allCustomerLoansSorted.indexOfFirst { it.id == targetActiveLoan.id }
@@ -2045,8 +2135,19 @@ fun CustomerDetailScreen(
                 }
             }
         } else {
-            // Past Loans history page
-            if (paidHistory.isEmpty()) {
+            // Past Loans history page (including <6M Firestore settled loans and >6M Firebase Storage .md archives)
+            if (isLoadingArchivedHistory && paidHistory.isEmpty()) {
+                Box(
+                    modifier = Modifier.fillMaxWidth().padding(24.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    AppLogoPulseLoader(
+                        customAppLogo = customAppLogo,
+                        title = "",
+                        message = "Fetching archived Past History from Cloud Storage..."
+                    )
+                }
+            } else if (paidHistory.isEmpty() && archivedCloudHistory.isEmpty()) {
                 Box(
                     modifier = Modifier.fillMaxWidth().padding(32.dp),
                     contentAlignment = Alignment.Center
@@ -2075,6 +2176,62 @@ fun CustomerDetailScreen(
                             currentUserRole = currentUserRole,
                             loanLabel = loanLabel
                         )
+                    }
+
+                    // Render >6M Firebase Storage Markdown Archives that aren't already in local paidHistory
+                    val localPaidUuids = remember(paidHistory) { paidHistory.map { it.uuid }.toSet() }
+                    val extraCloudArchives = remember(archivedCloudHistory, localPaidUuids) {
+                        archivedCloudHistory.filter { it.loanUuid !in localPaidUuids }
+                    }
+                    extraCloudArchives.forEach { archivedItem ->
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFFF8FAFC)),
+                            shape = RoundedCornerShape(14.dp),
+                            border = BorderStroke(1.dp, Color(0xFFCBD5E1)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "Archived Cloud Loan (>6 Months)",
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF334155)
+                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .background(Color(0xFFE2E8F0), RoundedCornerShape(6.dp))
+                                            .padding(horizontal = 8.dp, vertical = 3.dp)
+                                    ) {
+                                        Text(
+                                            text = "Cloud .MD Archive",
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFF475569)
+                                        )
+                                    }
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(Color.White, RoundedCornerShape(8.dp))
+                                        .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(8.dp))
+                                        .padding(10.dp)
+                                ) {
+                                    Text(
+                                        text = archivedItem.markdownContent,
+                                        fontSize = 11.sp,
+                                        fontFamily = FontFamily.Monospace,
+                                        color = ColorSlateDark,
+                                        lineHeight = 16.sp
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -2195,12 +2352,23 @@ fun CustomerDetailScreen(
         }
     }
 
-        // UP ARROWMARK WHEN I CLICK MOVE TO THAT DAYS DASHBOARD OR COSTOMERS DASHBOARD THIS SHOULD BE SHOWN ONLY IN DAY PAGES AND IN CUSTOMERDSHBOARD WHERE THERE R MORE THAN 10 COLLECTION ENTRIES
-        if (customerPayments.size > 10 && scrollState.value > 300) {
+        // Smooth bottom-edge slide-up / slide-down Scroll-to-Top button
+        androidx.compose.animation.AnimatedVisibility(
+            visible = customerPayments.size > 8 && scrollState.value > 300,
+            enter = androidx.compose.animation.slideInVertically(
+                initialOffsetY = { fullHeight -> fullHeight * 2 },
+                animationSpec = tween(durationMillis = 320, easing = FastOutSlowInEasing)
+            ) + androidx.compose.animation.fadeIn(animationSpec = tween(220)),
+            exit = androidx.compose.animation.slideOutVertically(
+                targetOffsetY = { fullHeight -> fullHeight * 2 },
+                animationSpec = tween(durationMillis = 280, easing = FastOutSlowInEasing)
+            ) + androidx.compose.animation.fadeOut(animationSpec = tween(200)),
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(16.dp)
+        ) {
             Box(
                 modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(16.dp)
                     .size(48.dp)
                     .background(appColors.primaryAccent, CircleShape)
                     .clickable {
@@ -2300,6 +2468,14 @@ fun ActiveLoanSection(
 
         Spacer(modifier = Modifier.height(14.dp))
 
+        var showMoreDetails by rememberSaveable(activeLoan.id) { mutableStateOf(false) }
+        val timelineItems = remember(payments, activeLoan.startDate) {
+            buildTimelineEntriesWithUnpaidWeeks(activeLoan.startDate, payments)
+        }
+        val unpaidCount = remember(timelineItems) {
+            timelineItems.count { it is LoanTimelineEntry.UnpaidBubble }
+        }
+
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -2311,33 +2487,291 @@ fun ActiveLoanSection(
                 color = ColorSlateDark,
                 fontSize = 14.sp
             )
+
+            Surface(
+                onClick = { showMoreDetails = !showMoreDetails },
+                shape = RoundedCornerShape(20.dp),
+                color = if (showMoreDetails) Color(0xFFFFF7ED) else Color(0xFFF1F5F9),
+                border = BorderStroke(
+                    width = 1.dp,
+                    color = if (showMoreDetails) Color(0xFFEA580C) else Color(0xFFCBD5E1)
+                ),
+                modifier = Modifier.testTag("toggle_more_details_button_${activeLoan.id}")
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Icon(
+                        imageVector = if (showMoreDetails) Icons.Default.UnfoldLess else Icons.Default.UnfoldMore,
+                        contentDescription = null,
+                        tint = if (showMoreDetails) Color(0xFFEA580C) else appColors.primaryAccent,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Text(
+                        text = if (showMoreDetails) "Show Less Details" else if (unpaidCount > 0) "More Details ($unpaidCount)" else "More Details",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (showMoreDetails) Color(0xFFEA580C) else appColors.primaryAccent
+                    )
+                }
+            }
         }
 
-        Spacer(modifier = Modifier.height(14.dp))
+        Spacer(modifier = Modifier.height(10.dp))
 
         Text("Receipt History", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color.Gray)
         Spacer(modifier = Modifier.height(6.dp))
 
-        val nonZeroPayments = remember(payments) { payments.filter { it.amountPaid > 0.0 } }
-        if (nonZeroPayments.isEmpty()) {
+        val hasPaidEntries = remember(timelineItems) {
+            timelineItems.any { it is LoanTimelineEntry.PaidInstallment }
+        }
+        if (!hasPaidEntries && (!showMoreDetails || unpaidCount == 0)) {
             Box(
                 modifier = Modifier.fillMaxWidth().padding(16.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Text("No payments recorded yet.", fontSize = 12.sp, color = Color.Gray)
+                Text(
+                    text = if (unpaidCount > 0) "No paid installments yet. Tap 'More Details' to view $unpaidCount unpaid week(s)." else "No payments recorded yet.",
+                    fontSize = 12.sp,
+                    color = Color.Gray
+                )
             }
         } else {
             Column(
                 modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                nonZeroPayments.forEach { payment ->
-                    PaymentHistoryRow(
-                        payment = payment,
-                        onEdit = { onEditPayment(payment) },
-                        onDelete = { onDeletePayment(payment) },
-                        currentUserRole = currentUserRole
+                timelineItems.forEach { item ->
+                    when (item) {
+                        is LoanTimelineEntry.PaidInstallment -> {
+                            PaymentHistoryRow(
+                                payment = item.payment.copy(weekNumber = item.sequentialPaidWeekNumber),
+                                onEdit = { onEditPayment(item.payment) },
+                                onDelete = { onDeletePayment(item.payment) },
+                                currentUserRole = currentUserRole
+                            )
+                        }
+                        is LoanTimelineEntry.UnpaidBubble -> {
+                            androidx.compose.animation.AnimatedVisibility(
+                                visible = showMoreDetails,
+                                enter = androidx.compose.animation.expandVertically(
+                                    expandFrom = Alignment.CenterVertically,
+                                    animationSpec = tween(durationMillis = 280, easing = FastOutSlowInEasing)
+                                ) + androidx.compose.animation.scaleIn(
+                                    initialScale = 0.55f,
+                                    animationSpec = tween(durationMillis = 280, easing = FastOutSlowInEasing)
+                                ) + androidx.compose.animation.fadeIn(animationSpec = tween(220)),
+                                exit = androidx.compose.animation.shrinkVertically(
+                                    shrinkTowards = Alignment.CenterVertically,
+                                    animationSpec = tween(durationMillis = 240, easing = FastOutSlowInEasing)
+                                ) + androidx.compose.animation.scaleOut(
+                                    targetScale = 0.45f,
+                                    animationSpec = tween(durationMillis = 240, easing = FastOutSlowInEasing)
+                                ) + androidx.compose.animation.fadeOut(animationSpec = tween(180))
+                            ) {
+                                UnpaidWeekBubbleRow(
+                                    unpaidDateMillis = item.dateMillis,
+                                    betweenLabel = item.betweenLabel,
+                                    explicitPayment = item.explicitUnpaidPayment,
+                                    onDeleteExplicit = item.explicitUnpaidPayment?.let { p -> { onDeletePayment(p) } },
+                                    currentUserRole = currentUserRole
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+sealed class LoanTimelineEntry {
+    data class PaidInstallment(
+        val payment: WeeklyPayment,
+        val sequentialPaidWeekNumber: Int
+    ) : LoanTimelineEntry()
+
+    data class UnpaidBubble(
+        val key: String,
+        val dateMillis: Long,
+        val betweenLabel: String,
+        val explicitUnpaidPayment: WeeklyPayment? = null
+    ) : LoanTimelineEntry()
+}
+
+fun buildTimelineEntriesWithUnpaidWeeks(
+    loanStartDate: Long,
+    payments: List<WeeklyPayment>
+): List<LoanTimelineEntry> {
+    val activeRecords = payments
+        .filter { it.status != "DELETED" }
+        .sortedWith(compareBy<WeeklyPayment> { it.paymentDate }.thenBy { it.id })
+
+    val paidRecords = activeRecords.filter {
+        it.amountPaid > 0.0 && !it.notes.equals("UNPAID", ignoreCase = true)
+    }
+    val explicitUnpaidRecords = activeRecords.filter {
+        it.amountPaid <= 0.0 || it.notes.equals("UNPAID", ignoreCase = true)
+    }.toMutableList()
+
+    val result = mutableListOf<LoanTimelineEntry>()
+    val oneWeekMs = 7L * 24 * 60 * 60 * 1000L
+    val gapThresholdMs = 11L * 24 * 60 * 60 * 1000L // >11 days between payments indicates a missed weekly installment
+
+    var prevDate = if (loanStartDate > 0L) loanStartDate else (paidRecords.firstOrNull()?.paymentDate ?: 0L)
+    var prevWeekNum = 0
+
+    paidRecords.forEachIndexed { index, paid ->
+        val seqWeek = index + 1
+        val currentPayDate = paid.paymentDate
+
+        // 1. Insert any explicit unpaid records that occurred on or before this paid installment
+        val matchingExplicit = explicitUnpaidRecords.filter { it.paymentDate <= currentPayDate }
+        explicitUnpaidRecords.removeAll(matchingExplicit.toSet())
+
+        val betweenText = if (prevWeekNum == 0) {
+            "Before Week 1"
+        } else {
+            "Between Week $prevWeekNum & Week $seqWeek"
+        }
+
+        if (matchingExplicit.isNotEmpty()) {
+            matchingExplicit.forEach { unpaidRec ->
+                result.add(
+                    LoanTimelineEntry.UnpaidBubble(
+                        key = "explicit_${unpaidRec.id}_${unpaidRec.paymentDate}",
+                        dateMillis = unpaidRec.paymentDate,
+                        betweenLabel = betweenText,
+                        explicitUnpaidPayment = unpaidRec
                     )
+                )
+            }
+        } else if (prevDate > 0L && (currentPayDate - prevDate) >= gapThresholdMs) {
+            // Synthesize missed weekly bubble(s) if no payment was made in that week window
+            val missedWeeks = (((currentPayDate - prevDate) / oneWeekMs).toInt() - 1).coerceIn(1, 8)
+            for (m in 1..missedWeeks) {
+                val missedDate = prevDate + (m * oneWeekMs)
+                result.add(
+                    LoanTimelineEntry.UnpaidBubble(
+                        key = "gap_${prevWeekNum}_${seqWeek}_$m",
+                        dateMillis = missedDate,
+                        betweenLabel = betweenText,
+                        explicitUnpaidPayment = null
+                    )
+                )
+            }
+        }
+
+        // 2. Add the paid installment row with strictly sequential paid week number
+        result.add(
+            LoanTimelineEntry.PaidInstallment(
+                payment = paid,
+                sequentialPaidWeekNumber = seqWeek
+            )
+        )
+
+        prevDate = currentPayDate
+        prevWeekNum = seqWeek
+    }
+
+    // 3. Append any remaining explicit unpaid records recorded after the last paid week
+    val afterLabel = if (prevWeekNum == 0) "Unpaid Week (Week Nil)" else "After Week $prevWeekNum"
+    explicitUnpaidRecords.forEach { unpaidRec ->
+        result.add(
+            LoanTimelineEntry.UnpaidBubble(
+                key = "explicit_tail_${unpaidRec.id}_${unpaidRec.paymentDate}",
+                dateMillis = unpaidRec.paymentDate,
+                betweenLabel = afterLabel,
+                explicitUnpaidPayment = unpaidRec
+            )
+        )
+    }
+
+    return result
+}
+
+@Composable
+fun UnpaidWeekBubbleRow(
+    unpaidDateMillis: Long,
+    betweenLabel: String,
+    explicitPayment: WeeklyPayment?,
+    onDeleteExplicit: (() -> Unit)?,
+    currentUserRole: String = "ADMIN"
+) {
+    val orangeText = Color(0xFFEA580C)
+    val orangeBorder = Color(0xFFFB923C)
+    val orangeBg = Color(0xFFFFF7ED)
+    val dateStr = remember(unpaidDateMillis) {
+        SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date(unpaidDateMillis))
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 2.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Surface(
+            shape = RoundedCornerShape(20.dp),
+            color = orangeBg,
+            border = BorderStroke(1.dp, orangeBorder),
+            shadowElevation = 1.dp,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .background(orangeText.copy(alpha = 0.14f), RoundedCornerShape(12.dp))
+                            .padding(horizontal = 8.dp, vertical = 3.dp)
+                    ) {
+                        Text(
+                            text = dateStr,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = orangeText
+                        )
+                    }
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Paid: ₹0 — Not paid in that week",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = orangeText
+                        )
+                        Text(
+                            text = "$betweenLabel • Week Nil",
+                            fontSize = 9.5.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = orangeText.copy(alpha = 0.8f)
+                        )
+                    }
+                }
+
+                if (explicitPayment != null && onDeleteExplicit != null && currentUserRole != "USER") {
+                    IconButton(
+                        onClick = onDeleteExplicit,
+                        modifier = Modifier.size(26.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Remove unpaid mark",
+                            tint = orangeText,
+                            modifier = Modifier.size(15.dp)
+                        )
+                    }
                 }
             }
         }
@@ -2447,7 +2881,7 @@ fun PaymentHistoryRow(
                             )
                         }
 
-                        // Time Chip
+                        // Time Chip (Clock icon before time)
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
@@ -2456,8 +2890,8 @@ fun PaymentHistoryRow(
                                 .padding(horizontal = 8.dp, vertical = 3.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Default.CheckCircle,
-                                contentDescription = null,
+                                imageVector = Icons.Default.AccessTime,
+                                contentDescription = "Payment time",
                                 tint = ColorAccentBlue.copy(alpha = 0.7f),
                                 modifier = Modifier.size(11.dp)
                             )
@@ -2567,17 +3001,38 @@ fun HistoricLoanCard(
     val effectiveDays = maxOf(1, diffDays)
     val annualizedRate = flatRate * (365.0 / effectiveDays)
 
-    // Calculate time remaining before 72 hours auto deletion
+    // 6-Month Editable Retention & Post-6-Month Plain-Text Read-Only Archive
     val now = System.currentTimeMillis()
-    val ageMs = now - completionTime
-    val seventyTwoHoursMs = 72 * 60 * 60 * 1000L
-    val remainingMs = (seventyTwoHoursMs - ageMs).coerceAtLeast(0L)
-    val remainingHours = (remainingMs / (1000L * 60 * 60)).toInt()
-    val remainingMins = ((remainingMs % (1000L * 60 * 60)) / (1000L * 60)).toInt()
-    val autoDeleteLabel = if (remainingHours > 0) {
-        "Auto-deletes in ${remainingHours}h ${remainingMins}m"
+    val ageMs = (now - completionTime).coerceAtLeast(0L)
+    val sixMonthsMs = 180L * 24 * 60 * 60 * 1000L
+    val isArchivedReadOnly = ageMs >= sixMonthsMs || historicCycle.notes.startsWith("COMPACT_6M|")
+    val remainingDays = ((sixMonthsMs - ageMs) / (1000L * 60 * 60 * 24)).coerceAtLeast(0L).toInt()
+    val retentionBadgeLabel = if (isArchivedReadOnly) {
+        "Archived (>6M • Read-Only)"
     } else {
-        "Auto-deletes in ${remainingMins}m"
+        "Editable (${remainingDays}d left)"
+    }
+    val effectiveRole = if (isArchivedReadOnly) "USER" else currentUserRole
+
+    // Parse compact plain-text archive format if stored as COMPACT_6M|P=...|I=...|D=...|W=...|TW=...|PAID=...|SD=...|CD=...|REC=...
+    val compactSummaryText = remember(historicCycle.notes, historicCycle, payments) {
+        val sdfShort = SimpleDateFormat("dd/MM/yy", Locale.getDefault())
+        if (historicCycle.notes.startsWith("COMPACT_6M|")) {
+            val map = historicCycle.notes.removePrefix("COMPACT_6M|")
+                .split("|")
+                .mapNotNull { token ->
+                    val idx = token.indexOf('=')
+                    if (idx > 0) token.substring(0, idx) to token.substring(idx + 1) else null
+                }.toMap()
+            val recRaw = map["REC"].orEmpty()
+            val recFormatted = if (recRaw.isBlank()) "None" else recRaw.split(";").joinToString("  •  ")
+            "P: ₹${map["P"] ?: historicCycle.loanAmount.toLong()} | Int: ₹${map["I"] ?: historicCycle.interestAmount.toLong()} | Ded: ₹${map["D"] ?: historicCycle.deduction.toLong()} | Wk: ₹${map["W"] ?: historicCycle.weeklyAmount.toLong()} (${map["TW"] ?: historicCycle.totalWeeks}w) | Paid: ₹${map["PAID"] ?: totalPaid.toLong()}\nReceipts: $recFormatted"
+        } else {
+            val recFormatted = if (payments.isEmpty()) "None" else payments.sortedBy { it.weekNumber }.joinToString("  •  ") { p ->
+                "W${p.weekNumber}:₹${p.amountPaid.toLong()}(${sdfShort.format(Date(p.paymentDate))})"
+            }
+            "P: ₹${historicCycle.loanAmount.toLong()} | Int: ₹${historicCycle.interestAmount.toLong()} | Ded: ₹${historicCycle.deduction.toLong()} | Wk: ₹${historicCycle.weeklyAmount.toLong()} (${historicCycle.totalWeeks}w) | Paid: ₹${totalPaid.toLong()}\nReceipts: $recFormatted"
+        }
     }
 
     Card(
@@ -2616,25 +3071,32 @@ fun HistoricLoanCard(
                         }
                     }
                     Text(
-                        text = "Disbursed: ${SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date(historicCycle.startDate))}",
+                        text = "Disbursed: ${SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date(historicCycle.startDate))} • $durationLabel",
                         fontSize = 11.sp,
                         color = Color.Gray
                     )
                 }
                 
-                // Top Right: Auto-deletion badge, Share Statement & Delete button
+                // Top Right: 6-Month Retention Status badge, Share Statement & Delete button
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     Box(
                         modifier = Modifier
-                            .background(Color(0xFFFEF2F2), RoundedCornerShape(6.dp))
-                            .border(1.dp, Color(0xFFFECACA), RoundedCornerShape(6.dp))
+                            .background(
+                                if (isArchivedReadOnly) Color(0xFFF1F5F9) else Color(0xFFEFF6FF),
+                                RoundedCornerShape(6.dp)
+                            )
+                            .border(
+                                1.dp,
+                                if (isArchivedReadOnly) Color(0xFFCBD5E1) else Color(0xFFBFDBFE),
+                                RoundedCornerShape(6.dp)
+                            )
                             .padding(horizontal = 6.dp, vertical = 3.dp)
                     ) {
                         Text(
-                            text = autoDeleteLabel,
+                            text = retentionBadgeLabel,
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
-                            color = ColorLossRed
+                            color = if (isArchivedReadOnly) Color(0xFF475569) else Color(0xFF1D4ED8)
                         )
                     }
                     if (onShareClicked != null) {
@@ -2642,7 +3104,7 @@ fun HistoricLoanCard(
                             Icon(Icons.Filled.ListAlt, contentDescription = "Share Closed Statement", tint = Color(0xFFFBBF24), modifier = Modifier.size(18.dp))
                         }
                     }
-                    if (currentUserRole != "USER") {
+                    if (effectiveRole != "USER") {
                         IconButton(onClick = onDeleteLoan, modifier = Modifier.size(32.dp)) {
                             Icon(Icons.Default.Delete, contentDescription = "Delete past loan", tint = ColorLossRed, modifier = Modifier.size(16.dp))
                         }
@@ -2652,7 +3114,7 @@ fun HistoricLoanCard(
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // Full Loan Details Grid (Disbursed, Principal, Interest, Deduction, Net Disbursed, Weekly Instalment, Tenure)
+            // Full Loan Details Grid (Disbursed, Principal, Interest, Deduction, Weekly Instalment, Tenure)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
@@ -2698,70 +3160,150 @@ fun HistoricLoanCard(
                 }
             }
 
-            if (historicCycle.notes.isNotBlank()) {
-                Spacer(modifier = Modifier.height(6.dp))
-                Text("Notes: ${historicCycle.notes}", fontSize = 11.sp, color = Color.Gray, fontStyle = FontStyle.Italic)
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Compact Plain-Text Archive Summary Block (saves storage and presents simply)
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color.White, RoundedCornerShape(8.dp))
+                    .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(8.dp))
+                    .padding(10.dp)
+            ) {
+                Text(
+                    text = compactSummaryText,
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace,
+                    color = ColorSlateDark,
+                    lineHeight = 16.sp
+                )
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
-            Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(Color(0xFFE2E8F0)))
-            Spacer(modifier = Modifier.height(8.dp))
+            if (!isArchivedReadOnly) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(Color(0xFFE2E8F0)))
+                Spacer(modifier = Modifier.height(8.dp))
 
-            // Action Row: Edit Loan Details & Add Payment buttons
-            if (currentUserRole != "USER") {
+                // Action Row: Edit Loan Details & Add Payment buttons (active during 6-month window)
+                if (effectiveRole != "USER") {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = onEditLoan,
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Edit Loan Details", fontSize = 11.sp)
+                        }
+
+                        Button(
+                            onClick = onAddPayment,
+                            colors = ButtonDefaults.buttonColors(containerColor = ColorAccentBlue),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Default.Add, contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("+ Add Receipt", fontSize = 11.sp, color = Color.White)
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(10.dp))
+                }
+
+                // Receipts / Payment Transactions Breakdown for this Past Loan (editable within 6 months)
+                var showMoreHistoricDetails by rememberSaveable(historicCycle.id) { mutableStateOf(false) }
+                val historicTimeline = remember(payments, historicCycle.startDate) {
+                    buildTimelineEntriesWithUnpaidWeeks(historicCycle.startDate, payments)
+                }
+                val historicPaidCount = remember(historicTimeline) {
+                    historicTimeline.count { it is LoanTimelineEntry.PaidInstallment }
+                }
+                val historicUnpaidCount = remember(historicTimeline) {
+                    historicTimeline.count { it is LoanTimelineEntry.UnpaidBubble }
+                }
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    OutlinedButton(
-                        onClick = onEditLoan,
-                        shape = RoundedCornerShape(8.dp),
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(14.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Edit Loan Details", fontSize = 11.sp)
-                    }
-
-                    Button(
-                        onClick = onAddPayment,
-                        colors = ButtonDefaults.buttonColors(containerColor = ColorAccentBlue),
-                        shape = RoundedCornerShape(8.dp),
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Icon(Icons.Default.Add, contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("+ Add Receipt", fontSize = 11.sp, color = Color.White)
+                    Text(
+                        text = "Receipts Breakdown ($historicPaidCount)",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                        color = ColorSlateDark
+                    )
+                    if (historicUnpaidCount > 0) {
+                        Surface(
+                            onClick = { showMoreHistoricDetails = !showMoreHistoricDetails },
+                            shape = RoundedCornerShape(16.dp),
+                            color = if (showMoreHistoricDetails) Color(0xFFFFF7ED) else Color(0xFFF1F5F9),
+                            border = BorderStroke(1.dp, if (showMoreHistoricDetails) Color(0xFFEA580C) else Color(0xFFCBD5E1))
+                        ) {
+                            Text(
+                                text = if (showMoreHistoricDetails) "Show Less Details" else "More Details ($historicUnpaidCount)",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (showMoreHistoricDetails) Color(0xFFEA580C) else ColorAccentBlue,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
                     }
                 }
-                Spacer(modifier = Modifier.height(10.dp))
-            }
+                Spacer(modifier = Modifier.height(6.dp))
 
-            // Receipts / Payment Transactions Breakdown for this Past Loan
-            Text(
-                text = "Receipts Breakdown (${payments.size})",
-                fontWeight = FontWeight.Bold,
-                fontSize = 12.sp,
-                color = ColorSlateDark
-            )
-            Spacer(modifier = Modifier.height(6.dp))
-
-            if (payments.isEmpty()) {
-                Text("No payment receipts recorded.", fontSize = 11.sp, color = Color.Gray)
-            } else {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    payments.sortedBy { it.weekNumber }.forEach { payment ->
-                        PaymentHistoryRow(
-                            payment = payment,
-                            onEdit = { onEditPayment(payment) },
-                            onDelete = { onDeletePayment(payment) },
-                            currentUserRole = currentUserRole
-                        )
+                if (historicPaidCount == 0 && (!showMoreHistoricDetails || historicUnpaidCount == 0)) {
+                    Text("No payment receipts recorded.", fontSize = 11.sp, color = Color.Gray)
+                } else {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        historicTimeline.forEach { item ->
+                            when (item) {
+                                is LoanTimelineEntry.PaidInstallment -> {
+                                    PaymentHistoryRow(
+                                        payment = item.payment.copy(weekNumber = item.sequentialPaidWeekNumber),
+                                        onEdit = { onEditPayment(item.payment) },
+                                        onDelete = { onDeletePayment(item.payment) },
+                                        currentUserRole = effectiveRole
+                                    )
+                                }
+                                is LoanTimelineEntry.UnpaidBubble -> {
+                                    androidx.compose.animation.AnimatedVisibility(
+                                        visible = showMoreHistoricDetails,
+                                        enter = androidx.compose.animation.expandVertically(
+                                            expandFrom = Alignment.CenterVertically,
+                                            animationSpec = tween(durationMillis = 280, easing = FastOutSlowInEasing)
+                                        ) + androidx.compose.animation.scaleIn(
+                                            initialScale = 0.55f,
+                                            animationSpec = tween(durationMillis = 280, easing = FastOutSlowInEasing)
+                                        ) + androidx.compose.animation.fadeIn(animationSpec = tween(220)),
+                                        exit = androidx.compose.animation.shrinkVertically(
+                                            shrinkTowards = Alignment.CenterVertically,
+                                            animationSpec = tween(durationMillis = 240, easing = FastOutSlowInEasing)
+                                        ) + androidx.compose.animation.scaleOut(
+                                            targetScale = 0.45f,
+                                            animationSpec = tween(durationMillis = 240, easing = FastOutSlowInEasing)
+                                        ) + androidx.compose.animation.fadeOut(animationSpec = tween(180))
+                                    ) {
+                                        UnpaidWeekBubbleRow(
+                                            unpaidDateMillis = item.dateMillis,
+                                            betweenLabel = item.betweenLabel,
+                                            explicitPayment = item.explicitUnpaidPayment,
+                                            onDeleteExplicit = item.explicitUnpaidPayment?.let { p -> { onDeletePayment(p) } },
+                                            currentUserRole = effectiveRole
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }

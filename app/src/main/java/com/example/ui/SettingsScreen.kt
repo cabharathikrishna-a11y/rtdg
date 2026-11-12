@@ -86,9 +86,11 @@ fun SettingsScreen(viewModel: FinanceViewModel) {
     var customGroupName by remember { mutableStateOf("") }
     val scrollState = rememberScrollState()
 
-    var activeSubPage by remember { mutableStateOf<String?>(null) }
+    val activeSubPage by viewModel.settingsSubPage.collectAsStateWithLifecycle()
 
-    // Sync states removed
+    androidx.activity.compose.BackHandler(enabled = activeSubPage != null) {
+        viewModel.setSettingsSubPage(null)
+    }
 
     val fontSizeScale by viewModel.fontSizeScale.collectAsStateWithLifecycle()
     val fontStyleKey by viewModel.fontStyleKey.collectAsStateWithLifecycle()
@@ -103,49 +105,6 @@ fun SettingsScreen(viewModel: FinanceViewModel) {
         modifier = Modifier.fillMaxSize().imePadding().padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        if (activeSubPage != null) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable {
-                        activeSubPage = null
-                    },
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.ArrowBack,
-                    contentDescription = translate("Back", language),
-                    tint = ColorSlateDark,
-                    modifier = Modifier.size(24.dp)
-                )
-                Spacer(modifier = Modifier.width(12.dp))
-                Text(
-                    text = when (activeSubPage) {
-                        "language" -> translate("App Language", language)
-                        "font" -> translate("App Font Size Option", language)
-                        "business" -> translate("Business Profile & UPI", language)
-                        "groups" -> translate("Collection Groups (Days)", language)
-                        "sim" -> translate("SIM Card Preference", language)
-                        "automation" -> translate("Ledger & SMS Automation", language)
-                        "templates" -> translate("Message & Reminder Templates", language)
-                        "backup" -> translate("App Data Backup & Restore (JSON)", language)
-                        "reset" -> translate("System Reset & Maintenance", language)
-                        "audit" -> translate("System Audit Logs", language)
-                        "type_selection" -> translate("User Account Management", language)
-                        "users_management" -> translate("User Account Management", language)
-                        "system_update" -> translate("System Auto-Update Settings", language)
-                        "contacts_sync" -> translate("Google Contacts Sync Settings", language)
-                        "firebase_dashboard" -> "Firebase Operations & Dashboard"
-                        else -> translate("Settings", language)
-                    },
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 18.sp,
-                    color = ColorSlateDark
-                )
-            }
-            HorizontalDivider(color = Color(0xFFCBD5E1))
-        }
-
         Box(modifier = Modifier.weight(1f)) {
             if (activeSubPage == "audit" || activeSubPage == "firebase_dashboard") {
                 when (activeSubPage) {
@@ -173,304 +132,327 @@ fun SettingsScreen(viewModel: FinanceViewModel) {
                         // Group 1: Business & Account Setup
                         Text(translate("Business & Account Setup", language), fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color(0xFF64748B), modifier = Modifier.padding(top = 8.dp, bottom = 4.dp, start = 4.dp))
 
-                        SettingsMenuCard(
-                            title = translate("Business Profile & UPI", language),
-                            subtitle = translate("Merchant name, UPI ID, payment links & QR code", language),
-                            icon = Icons.Default.Home,
-                            iconTint = Color(0xFF0F766E),
-                            iconBgColor = Color(0xFFCCFBF1),
-                            onClick = { activeSubPage = "business" },
-                            testTag = "settings_business_btn"
-                        )
+                        AnimatedSlideInItem(index = 0) {
+                            SettingsMenuCard(
+                                title = translate("Business Profile & UPI", language),
+                                subtitle = translate("Merchant name, UPI ID, payment links & QR code", language),
+                                icon = Icons.Default.Home,
+                                iconTint = Color(0xFF0F766E),
+                                iconBgColor = Color(0xFFCCFBF1),
+                                onClick = { viewModel.setSettingsSubPage("business") },
+                                testTag = "settings_business_btn"
+                            )
+                        }
 
-                        SettingsMenuCard(
-                            title = translate("Collection Groups (Days)", language),
-                            subtitle = translate("Reorder, rename and configure active route circles", language),
-                            icon = Icons.Filled.List,
-                            iconTint = Color(0xFF7C3AED),
-                            iconBgColor = Color(0xFFF3E8FF),
-                            onClick = { activeSubPage = "groups" },
-                            testTag = "settings_groups_btn"
-                        )
-
-                        SettingsMenuCard(
-                            title = translate("Device Mode & Account", language),
-                            subtitle = translate("Switch device role between Main Admin and Staff/User", language),
-                            icon = Icons.Default.AccountBox,
-                            iconTint = Color(0xFF8B5CF6),
-                            iconBgColor = Color(0xFFEDE9FE),
-                            onClick = { activeSubPage = "type_selection" },
-                            testTag = "settings_user_type_btn"
-                        )
+                        AnimatedSlideInItem(index = 1) {
+                            SettingsMenuCard(
+                                title = translate("Collection Groups (Days)", language),
+                                subtitle = translate("Reorder, rename and configure active route circles", language),
+                                icon = Icons.Filled.List,
+                                iconTint = Color(0xFF7C3AED),
+                                iconBgColor = Color(0xFFF3E8FF),
+                                onClick = { viewModel.setSettingsSubPage("groups") },
+                                testTag = "settings_groups_btn"
+                            )
+                        }
 
                         // Group 2: Automation & Messaging
                         Text(translate("Automation & Messaging", language), fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color(0xFF64748B), modifier = Modifier.padding(top = 16.dp, bottom = 4.dp, start = 4.dp))
 
-                        SettingsMenuCard(
-                            title = translate("Message & Reminder Templates", language),
-                            subtitle = translate("Customize SMS, WhatsApp confirmations and dynamic tags", language),
-                            icon = Icons.Default.Email,
-                            iconTint = Color(0xFFEA580C),
-                            iconBgColor = Color(0xFFFFEDD5),
-                            onClick = { activeSubPage = "templates" },
-                            testTag = "settings_templates_btn"
-                        )
+                        AnimatedSlideInItem(index = 2) {
+                            SettingsMenuCard(
+                                title = translate("Message & Reminder Templates", language),
+                                subtitle = translate("Customize SMS, WhatsApp confirmations and dynamic tags", language),
+                                icon = Icons.Default.Email,
+                                iconTint = Color(0xFFEA580C),
+                                iconBgColor = Color(0xFFFFEDD5),
+                                onClick = { viewModel.setSettingsSubPage("templates") },
+                                testTag = "settings_templates_btn"
+                            )
+                        }
 
-                        SettingsMenuCard(
-                            title = translate("SIM Card Preference", language),
-                            subtitle = translate("Select outbound SMS transaction delivery slots", language),
-                            icon = Icons.Default.SimCard,
-                            iconTint = Color(0xFFD946EF),
-                            iconBgColor = Color(0xFFFDF4FF),
-                            onClick = { activeSubPage = "sim" },
-                            testTag = "settings_sim_btn"
-                        )
+                        AnimatedSlideInItem(index = 3) {
+                            SettingsMenuCard(
+                                title = translate("SIM Card Preference", language),
+                                subtitle = translate("Select outbound SMS transaction delivery slots", language),
+                                icon = Icons.Default.SimCard,
+                                iconTint = Color(0xFFD946EF),
+                                iconBgColor = Color(0xFFFDF4FF),
+                                onClick = { viewModel.setSettingsSubPage("sim") },
+                                testTag = "settings_sim_btn"
+                            )
+                        }
 
-                        SettingsMenuCard(
-                            title = translate("Google Contacts Sync Settings", language),
-                            subtitle = translate("Sync borrower contact information directly to Google account", language),
-                            icon = Icons.Default.ContactPage,
-                            iconTint = Color(0xFF3B82F6),
-                            iconBgColor = Color(0xFFDBEAFE),
-                            onClick = { activeSubPage = "contacts_sync" },
-                            testTag = "settings_contacts_sync_btn"
-                        )
+                        AnimatedSlideInItem(index = 4) {
+                            SettingsMenuCard(
+                                title = translate("Google Contacts Sync Settings", language),
+                                subtitle = translate("Sync borrower contact information directly to Google account", language),
+                                icon = Icons.Default.ContactPage,
+                                iconTint = Color(0xFF3B82F6),
+                                iconBgColor = Color(0xFFDBEAFE),
+                                onClick = { viewModel.setSettingsSubPage("contacts_sync") },
+                                testTag = "settings_contacts_sync_btn"
+                            )
+                        }
 
                         // Group 3: Display & Personalization
                         Text(translate("Display & Personalization", language), fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color(0xFF64748B), modifier = Modifier.padding(top = 16.dp, bottom = 4.dp, start = 4.dp))
 
-                        SettingsMenuCard(
-                            title = translate("App Language", language),
-                            subtitle = translate("English / Tamil option selection", language),
-                            iconBgColor = Color(0xFFF1F5F9),
-                            customIcon = {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.Center
-                                ) {
-                                    Text("A", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0F172A))
-                                    Text("அ", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0F172A), modifier = Modifier.padding(start = 1.dp))
-                                }
-                            },
-                            onClick = { activeSubPage = "language" },
-                            testTag = "settings_language_btn"
-                        )
+                        AnimatedSlideInItem(index = 5) {
+                            SettingsMenuCard(
+                                title = translate("App Language", language),
+                                subtitle = translate("English / Tamil option selection", language),
+                                iconBgColor = Color(0xFFF1F5F9),
+                                customIcon = {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.Center
+                                    ) {
+                                        Text("A", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0F172A))
+                                        Text("அ", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0F172A), modifier = Modifier.padding(start = 1.dp))
+                                    }
+                                },
+                                onClick = { viewModel.setSettingsSubPage("language") },
+                                testTag = "settings_language_btn"
+                            )
+                        }
 
-                        SettingsMenuCard(
-                            title = translate("App Font Size Option", language),
-                            subtitle = translate("Normal, Medium, Large, Extra Large text choices", language),
-                            iconBgColor = Color(0xFFF1F5F9),
-                            customIcon = {
-                                Row(
-                                    verticalAlignment = Alignment.Bottom,
-                                    horizontalArrangement = Arrangement.Center
-                                ) {
-                                    Text("A", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0F172A))
-                                    Text("A", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0F172A), modifier = Modifier.padding(horizontal = 1.dp))
-                                    Text("A", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0F172A))
-                                }
-                            },
-                            onClick = { activeSubPage = "font" },
-                            testTag = "settings_font_btn"
-                        )
+                        AnimatedSlideInItem(index = 6) {
+                            SettingsMenuCard(
+                                title = translate("App Font Size Option", language),
+                                subtitle = translate("Normal, Medium, Large, Extra Large text choices", language),
+                                iconBgColor = Color(0xFFF1F5F9),
+                                customIcon = {
+                                    Row(
+                                        verticalAlignment = Alignment.Bottom,
+                                        horizontalArrangement = Arrangement.Center
+                                    ) {
+                                        Text("A", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0F172A))
+                                        Text("A", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0F172A), modifier = Modifier.padding(horizontal = 1.dp))
+                                        Text("A", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0F172A))
+                                    }
+                                },
+                                onClick = { viewModel.setSettingsSubPage("font") },
+                                testTag = "settings_font_btn"
+                            )
+                        }
 
                         // Group 4: Cloud, AI & Network Sync
                         Text(translate("Cloud, AI & Network Sync", language), fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color(0xFF64748B), modifier = Modifier.padding(top = 16.dp, bottom = 4.dp, start = 4.dp))
 
-                        SettingsMenuCard(
-                            title = translate("Firebase Unified Operations", language),
-                            subtitle = translate("Manage live Analytics, In-App Campaigns, Remote Config & Diagnostics", language),
-                            icon = Icons.Default.Cloud,
-                            iconTint = Color(0xFFF59E0B),
-                            iconBgColor = Color(0xFFFEF3C7),
-                            onClick = { activeSubPage = "firebase_dashboard" },
-                            testTag = "settings_firebase_dashboard_btn"
-                        )
+                        AnimatedSlideInItem(index = 7) {
+                            SettingsMenuCard(
+                                title = translate("Firebase Unified Operations", language),
+                                subtitle = translate("Manage live Analytics, In-App Campaigns, Remote Config & Diagnostics", language),
+                                icon = Icons.Default.Cloud,
+                                iconTint = Color(0xFFF59E0B),
+                                iconBgColor = Color(0xFFFEF3C7),
+                                onClick = { viewModel.setSettingsSubPage("firebase_dashboard") },
+                                testTag = "settings_firebase_dashboard_btn"
+                            )
+                        }
 
                         val aiEnabled by viewModel.aiEnabled.collectAsStateWithLifecycle()
-                        Card(
-                            colors = CardDefaults.cardColors(containerColor = Color.White),
-                            shape = RoundedCornerShape(12.dp),
-                            border = BorderStroke(1.dp, Color(0xFFE2E8F0)),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .testTag("settings_ai_enabled_card")
-                        ) {
-                            Row(
+                        AnimatedSlideInItem(index = 8) {
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = Color.White),
+                                shape = RoundedCornerShape(12.dp),
+                                border = BorderStroke(1.dp, Color(0xFFE2E8F0)),
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(16.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                                    .testTag("settings_ai_enabled_card")
                             ) {
-                                Box(
+                                Row(
                                     modifier = Modifier
-                                        .size(40.dp)
-                                        .background(Color(0xFFE0F2FE), CircleShape),
-                                    contentAlignment = Alignment.Center
+                                        .fillMaxWidth()
+                                        .padding(16.dp),
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Default.AutoAwesome,
-                                        contentDescription = null,
-                                        tint = Color(0xFF0284C7),
-                                        modifier = Modifier.size(20.dp)
+                                    Box(
+                                        modifier = Modifier
+                                            .size(40.dp)
+                                            .background(Color(0xFFE0F2FE), CircleShape),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.AutoAwesome,
+                                            contentDescription = null,
+                                            tint = Color(0xFF0284C7),
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(16.dp))
+                                    Column(
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Text(
+                                            text = translate("Easwar AI Assistant", language),
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 15.sp,
+                                            color = ColorSlateDark
+                                        )
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Text(
+                                            text = translate("Enable/Disable Easwar AI chatbot in top ribbon", language),
+                                            fontSize = 11.sp,
+                                            color = Color.Gray
+                                        )
+                                    }
+                                    Switch(
+                                        checked = aiEnabled,
+                                        onCheckedChange = { viewModel.setAiEnabled(it) },
+                                        colors = SwitchDefaults.colors(
+                                            checkedThumbColor = Color.White,
+                                            checkedTrackColor = Color(0xFF0284C7)
+                                        ),
+                                        modifier = Modifier.testTag("settings_ai_enabled_switch")
                                     )
                                 }
-                                Spacer(modifier = Modifier.width(16.dp))
-                                Column(
-                                    modifier = Modifier.weight(1f)
-                                ) {
-                                    Text(
-                                        text = translate("Easwar AI Assistant", language),
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 15.sp,
-                                        color = ColorSlateDark
-                                    )
-                                    Spacer(modifier = Modifier.height(2.dp))
-                                    Text(
-                                        text = translate("Enable/Disable Easwar AI chatbot in top ribbon", language),
-                                        fontSize = 11.sp,
-                                        color = Color.Gray
-                                    )
-                                }
-                                Switch(
-                                    checked = aiEnabled,
-                                    onCheckedChange = { viewModel.setAiEnabled(it) },
-                                    colors = SwitchDefaults.colors(
-                                        checkedThumbColor = Color.White,
-                                        checkedTrackColor = Color(0xFF0284C7)
-                                    ),
-                                    modifier = Modifier.testTag("settings_ai_enabled_switch")
-                                )
                             }
                         }
 
                         val offlineModeEnabled by viewModel.offlineModeEnabled.collectAsStateWithLifecycle()
-                        Card(
-                            colors = CardDefaults.cardColors(containerColor = Color.White),
-                            shape = RoundedCornerShape(12.dp),
-                            border = BorderStroke(1.dp, Color(0xFFE2E8F0)),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .testTag("settings_offline_mode_card")
-                        ) {
-                            Row(
+                        AnimatedSlideInItem(index = 9) {
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = Color.White),
+                                shape = RoundedCornerShape(12.dp),
+                                border = BorderStroke(1.dp, Color(0xFFE2E8F0)),
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(16.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                                    .testTag("settings_offline_mode_card")
                             ) {
-                                Box(
+                                Row(
                                     modifier = Modifier
-                                        .size(40.dp)
-                                        .background(Color(0xFFFEE2E2), CircleShape),
-                                    contentAlignment = Alignment.Center
+                                        .fillMaxWidth()
+                                        .padding(16.dp),
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Default.WifiOff,
-                                        contentDescription = null,
-                                        tint = Color(0xFFDC2626),
-                                        modifier = Modifier.size(20.dp)
+                                    Box(
+                                        modifier = Modifier
+                                            .size(40.dp)
+                                            .background(Color(0xFFFEE2E2), CircleShape),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.WifiOff,
+                                            contentDescription = null,
+                                            tint = Color(0xFFDC2626),
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(16.dp))
+                                    Column(
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Text(
+                                            text = translate("Offline Mode", language),
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 15.sp,
+                                            color = ColorSlateDark
+                                        )
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Text(
+                                            text = translate("Disconnect Firebase & AI network syncs", language),
+                                            fontSize = 11.sp,
+                                            color = Color.Gray
+                                        )
+                                    }
+                                    Switch(
+                                        checked = offlineModeEnabled,
+                                        onCheckedChange = { viewModel.setOfflineModeEnabled(it) },
+                                        colors = SwitchDefaults.colors(
+                                            checkedThumbColor = Color.White,
+                                            checkedTrackColor = Color(0xFFDC2626)
+                                        ),
+                                        modifier = Modifier.testTag("settings_offline_mode_switch")
                                     )
                                 }
-                                Spacer(modifier = Modifier.width(16.dp))
-                                Column(
-                                    modifier = Modifier.weight(1f)
-                                ) {
-                                    Text(
-                                        text = translate("Offline Mode", language),
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 15.sp,
-                                        color = ColorSlateDark
-                                    )
-                                    Spacer(modifier = Modifier.height(2.dp))
-                                    Text(
-                                        text = translate("Disconnect Firebase, Drive & AI network syncs", language),
-                                        fontSize = 11.sp,
-                                        color = Color.Gray
-                                    )
-                                }
-                                Switch(
-                                    checked = offlineModeEnabled,
-                                    onCheckedChange = { viewModel.setOfflineModeEnabled(it) },
-                                    colors = SwitchDefaults.colors(
-                                        checkedThumbColor = Color.White,
-                                        checkedTrackColor = Color(0xFFDC2626)
-                                    ),
-                                    modifier = Modifier.testTag("settings_offline_mode_switch")
-                                )
                             }
                         }
 
                         // Group 5: Data & System Maintenance
                         Text(translate("Data & System Maintenance", language), fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color(0xFF64748B), modifier = Modifier.padding(top = 16.dp, bottom = 4.dp, start = 4.dp))
 
-                        SettingsMenuCard(
-                            title = translate("Local Data Backups & Restore", language),
-                            subtitle = translate("Export or import local JSON/YAML backup files", language),
-                            icon = Icons.Default.ImportExport,
-                            iconTint = Color(0xFF2563EB),
-                            iconBgColor = Color(0xFFDBEAFE),
-                            onClick = { activeSubPage = "backup" },
-                            testTag = "settings_backup_btn"
-                        )
+                        AnimatedSlideInItem(index = 10) {
+                            SettingsMenuCard(
+                                title = translate("Local Data Backups & Restore", language),
+                                subtitle = translate("Export or import local CSV backup files", language),
+                                icon = Icons.Default.ImportExport,
+                                iconTint = Color(0xFF2563EB),
+                                iconBgColor = Color(0xFFDBEAFE),
+                                onClick = { viewModel.setSettingsSubPage("backup") },
+                                testTag = "settings_backup_btn"
+                            )
+                        }
 
-                        SettingsMenuCard(
-                            title = translate("Recalibrate All Calculations", language),
-                            subtitle = translate("Force fresh live calculations and verify outstanding balances", language),
-                            icon = Icons.Default.Calculate,
-                            iconTint = Color(0xFF0284C7),
-                            iconBgColor = Color(0xFFE0F2FE),
-                            onClick = {
-                                viewModel.triggerDatabaseRescanAndRepair()
-                                Toast.makeText(context, "Calculations successfully recalibrated from live receipt logs!", Toast.LENGTH_SHORT).show()
-                            },
-                            testTag = "settings_recalibrate_btn"
-                        )
+                        AnimatedSlideInItem(index = 11) {
+                            SettingsMenuCard(
+                                title = translate("Recalibrate All Calculations", language),
+                                subtitle = translate("Force fresh live calculations and verify outstanding balances", language),
+                                icon = Icons.Default.Calculate,
+                                iconTint = Color(0xFF0284C7),
+                                iconBgColor = Color(0xFFE0F2FE),
+                                onClick = {
+                                    viewModel.triggerDatabaseRescanAndRepair()
+                                    Toast.makeText(context, "Calculations successfully recalibrated from live receipt logs!", Toast.LENGTH_SHORT).show()
+                                },
+                                testTag = "settings_recalibrate_btn"
+                            )
+                        }
 
-                        SettingsMenuCard(
-                            title = translate("System Audit Logs", language),
-                            subtitle = translate("View full system activity, edit history and audit logs", language),
-                            icon = Icons.Default.History,
-                            iconTint = Color(0xFF059669),
-                            iconBgColor = Color(0xFFD1FAE5),
-                            onClick = { activeSubPage = "audit" },
-                            testTag = "settings_audit_btn"
-                        )
+                        AnimatedSlideInItem(index = 12) {
+                            SettingsMenuCard(
+                                title = translate("System Audit Logs", language),
+                                subtitle = translate("View full system activity, edit history and audit logs", language),
+                                icon = Icons.Default.History,
+                                iconTint = Color(0xFF059669),
+                                iconBgColor = Color(0xFFD1FAE5),
+                                onClick = { viewModel.setSettingsSubPage("audit") },
+                                testTag = "settings_audit_btn"
+                            )
+                        }
 
-                        SettingsMenuCard(
-                            title = translate("System Auto-Update Settings", language),
-                            subtitle = translate("Check for OTA updates, toggle auto-update, pause & version info", language),
-                            icon = Icons.Default.SystemUpdate,
-                            iconTint = Color(0xFF10B981),
-                            iconBgColor = Color(0xFFD1FAE5),
-                            onClick = { activeSubPage = "system_update" },
-                            testTag = "settings_system_update_btn"
-                        )
+                        AnimatedSlideInItem(index = 13) {
+                            SettingsMenuCard(
+                                title = translate("System Auto-Update Settings", language),
+                                subtitle = translate("Check for OTA updates, toggle auto-update, pause & version info", language),
+                                icon = Icons.Default.SystemUpdate,
+                                iconTint = Color(0xFF10B981),
+                                iconBgColor = Color(0xFFD1FAE5),
+                                onClick = { viewModel.setSettingsSubPage("system_update") },
+                                testTag = "settings_system_update_btn"
+                            )
+                        }
 
-                        SettingsMenuCard(
-                            title = translate("System Reset & Maintenance", language),
-                            subtitle = translate("Perform standard cleanups and system defaults restore", language),
-                            icon = Icons.Default.Refresh,
-                            iconTint = Color(0xFFDC2626),
-                            iconBgColor = Color(0xFFFEE2E2),
-                            onClick = { activeSubPage = "reset" },
-                            testTag = "settings_reset_btn"
-                        )
+                        AnimatedSlideInItem(index = 14) {
+                            SettingsMenuCard(
+                                title = translate("System Reset & Maintenance", language),
+                                subtitle = translate("Perform standard cleanups and system defaults restore", language),
+                                icon = Icons.Default.Refresh,
+                                iconTint = Color(0xFFDC2626),
+                                iconBgColor = Color(0xFFFEE2E2),
+                                onClick = { viewModel.setSettingsSubPage("reset") },
+                                testTag = "settings_reset_btn"
+                            )
+                        }
 
                         // Group 6: Account Session
                         Text(translate("Account Session", language), fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color(0xFF64748B), modifier = Modifier.padding(top = 16.dp, bottom = 4.dp, start = 4.dp))
 
-                        SettingsMenuCard(
-                            title = translate("Sign Out", language),
-                            subtitle = translate("Disconnect and sign out of this session", language),
-                            icon = Icons.Filled.Logout,
-                            iconTint = Color(0xFFEF4444),
-                            iconBgColor = Color(0xFFFEE2E2),
-                            onClick = { showLogoutConfirmDialog = true },
-                            testTag = "settings_sign_out_btn"
-                        )
+                        AnimatedSlideInItem(index = 15) {
+                            SettingsMenuCard(
+                                title = translate("Sign Out", language),
+                                subtitle = translate("Disconnect and sign out of this session", language),
+                                icon = Icons.Filled.Logout,
+                                iconTint = Color(0xFFEF4444),
+                                iconBgColor = Color(0xFFFEE2E2),
+                                onClick = { showLogoutConfirmDialog = true },
+                                testTag = "settings_sign_out_btn"
+                            )
+                        }
                     } else {
                         when (activeSubPage) {
+                "language" -> LanguageSubPage(language = language, viewModel = viewModel, appColors = appColors)
                 "font" -> FontSizeSubPage(language = language, fontSizeScale = fontSizeScale, fontStyleKey = fontStyleKey, viewModel = viewModel, appColors = appColors)
                 "business" -> BusinessUpiSubPage(
                     language = language,

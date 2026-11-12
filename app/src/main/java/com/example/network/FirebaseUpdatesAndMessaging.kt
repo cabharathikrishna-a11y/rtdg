@@ -175,6 +175,14 @@ object FirebaseUpdateManager {
             return
         }
 
+        // Throttle automatic background update checks to at most once every 6 hours to save mobile data
+        val nowMs = System.currentTimeMillis()
+        val lastAutoCheckMs = prefs.getLong("last_auto_update_check_ts", 0L)
+        if (!manualCheck && (nowMs - lastAutoCheckMs) < 6L * 60L * 60L * 1000L) {
+            return
+        }
+        prefs.edit().putLong("last_auto_update_check_ts", nowMs).apply()
+
         // Set state to checking
         _updateStatus.value = UpdateStatus.CHECKING
         _updateError.value = null
@@ -215,24 +223,36 @@ object FirebaseUpdateManager {
             
             val isUpdateAvailable = latestCode > currentVersionCode && apkDownloadUrl.isNotEmpty()
             if (isUpdateAvailable) {
+                val dismissedCode = prefs.getLong("dismissed_update_version_code", -1L)
+                if (!manualCheck && dismissedCode == latestCode) {
+                    Log.i(TAG, "Update v$latestCode was dismissed by user. Skipping prompt.")
+                    _updateStatus.value = UpdateStatus.IDLE
+                    return@addOnSuccessListener
+                }
+                if (manualCheck && dismissedCode == latestCode) {
+                    prefs.edit().remove("dismissed_update_version_code").apply()
+                }
                 Log.i(TAG, "New Update Detected! Server: v$latestCode, Local: v$currentVersionCode")
                 
-                // Check if we have already downloaded this specific update file
+                // Check if we have already downloaded this specific update file (either in external downloads or internal cache)
                 val file = File(context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "mdfinance-update-$latestCode.apk")
+                val cacheFile = File(context.cacheDir, "mdfinance-update-$latestCode.apk")
                 val downloadedCode = prefs.getLong("downloaded_version_code", -1L)
 
-                if (file.exists() && downloadedCode == latestCode) {
+                if ((file.exists() && file.length() > 100_000L) || (cacheFile.exists() && cacheFile.length() > 100_000L) || downloadedCode == latestCode) {
+                    prefs.edit().putLong("downloaded_version_code", latestCode).apply()
                     _updateStatus.value = UpdateStatus.DOWNLOADED
                     Log.i(TAG, "Update file already downloaded and ready: v$latestCode")
                 } else {
                     _updateStatus.value = UpdateStatus.UPDATE_AVAILABLE
-                    Toast.makeText(context, "New Update Detected! Creating emergency backups...", Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, "New Update Detected! Saving local backup...", Toast.LENGTH_LONG).show()
 
-                    // Perform robust backup before starting download
+                    // Save local safety backup and flush pending Firestore delta edits (0 full-CSV cloud upload overhead!)
                     val coroutineScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO)
                     coroutineScope.launch {
                         try {
                             val db = com.example.data.DatabaseProvider.getDatabase(context)
+                            CloudLedgerSyncEngine.flushPendingEditsWithConflictCheck(context, db)
                             val customersList = db.collectionDao().getAllCustomersOnce()
                             val loanCyclesList = db.collectionDao().getAllLoanCyclesOnce()
                             val paymentsList = db.collectionDao().getAllPaymentsOnce()
@@ -246,34 +266,15 @@ object FirebaseUpdateManager {
                                 cashBalanceLogs = cashBalanceLogsList
                             )
 
-                            val backupDir = File(context.filesDir, "update_backups")
-                            if (!backupDir.exists()) {
-                                backupDir.mkdirs()
-                            }
-                            val sdf = java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.getDefault())
-                            val timestamp = sdf.format(java.util.Date())
-                            val backupFile = File(backupDir, "finance_ALL_backup_before_update_$timestamp.csv")
-                            backupFile.writeText(csvString, Charsets.UTF_8)
-                            Log.i(TAG, "Backup successfully saved locally to: ${backupFile.absolutePath}")
-
                             val latestBackupFile = File(context.filesDir, "finance_ALL_latest_backup.csv")
                             latestBackupFile.writeText(csvString, Charsets.UTF_8)
 
-                            // Upload backup securely to RTDB
-                            val rtdb = FirebaseDatabase.getInstance(SecureConfig.firebaseDatabaseUrl)
-                            val ref = rtdb.getReference("ledger_csv")
-                            val task = ref.setValue(csvString)
-                            com.google.android.gms.tasks.Tasks.await(task)
-                            Log.i(TAG, "Cloud ledger backup successfully uploaded and synchronized.")
-
                             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                                Toast.makeText(context, "Backups finalized! Launching automatic background downloader...", Toast.LENGTH_SHORT).show()
                                 executeApkDownload(context.applicationContext, apkDownloadUrl, latestCode)
                             }
                         } catch (e: Exception) {
                             Log.e(TAG, "Backup procedure failed: ${e.message}", e)
                             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                                Toast.makeText(context, "Backup failed but proceeding with update...", Toast.LENGTH_SHORT).show()
                                 executeApkDownload(context.applicationContext, apkDownloadUrl, latestCode)
                             }
                         }
@@ -290,6 +291,12 @@ object FirebaseUpdateManager {
         }
     }
 
+    fun dismissUpdate(context: Context, versionCode: Long) {
+        val prefs = context.getSharedPreferences("weekly_finance_prefs", Context.MODE_PRIVATE)
+        prefs.edit().putLong("dismissed_update_version_code", versionCode).apply()
+        _updateStatus.value = UpdateStatus.IDLE
+    }
+
     fun setDownloadedState(latestCode: Long) {
         _updateStatus.value = UpdateStatus.DOWNLOADED
     }
@@ -303,6 +310,12 @@ object FirebaseUpdateManager {
         _updateStatus.value = UpdateStatus.DOWNLOADING
         try {
             val file = File(context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "mdfinance-update-$latestCode.apk")
+            if (file.exists() && file.length() > 100_000L) {
+                val sharedPrefs = context.getSharedPreferences("weekly_finance_prefs", Context.MODE_PRIVATE)
+                sharedPrefs.edit().putLong("downloaded_version_code", latestCode).apply()
+                _updateStatus.value = UpdateStatus.DOWNLOADED
+                return
+            }
             if (file.exists()) {
                 file.delete()
             }

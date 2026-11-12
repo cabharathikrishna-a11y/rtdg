@@ -657,40 +657,6 @@ fun BusinessUpiSubPage(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(8.dp)
             )
-
-            HorizontalDivider(color = Color(0xFFE2E8F0), thickness = 1.dp)
-
-            Text(
-                text = "Statement Customization Override",
-                fontWeight = FontWeight.Bold,
-                fontSize = 13.sp,
-                color = ColorSlateDark
-            )
-            Text(
-                text = "Override dynamic components during ledger image sharing. Enter standard key-value configuration overrides below (e.g. TITLE, FOOTER, WATERMARK, WATERMARK_SUB, COLOR_START, COLOR_END, THEME_BORDER_COLOR).",
-                fontSize = 11.sp,
-                color = Color.Gray
-            )
-
-            OutlinedTextField(
-                value = statementCustomizationCode,
-                onValueChange = { viewModel.setStatementCustomizationCode(it) },
-                label = { Text("Customization Configuration Code", fontSize = 11.sp) },
-                placeholder = { Text("TITLE=COLLECTION STATEMENT REPORT\nFOOTER=Please retain this statement for your verification.\nCOLOR_START=#0F172A\nCOLOR_END=#1E1B4B\nTHEME_BORDER_COLOR=#4F46E5", fontSize = 11.sp) },
-                minLines = 4,
-                maxLines = 8,
-                textStyle = LocalTextStyle.current.copy(fontSize = 16.sp, color = Color.Black),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedTextColor = Color.Black,
-                    unfocusedTextColor = Color.Black,
-                    focusedLabelColor = Color.Black,
-                    unfocusedLabelColor = Color.Black,
-                    focusedBorderColor = LocalAppThemeColors.current.darkBg,
-                    unfocusedBorderColor = Color(0xFFCBD5E1)
-                ),
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(8.dp)
-            )
         }
     }
 }
@@ -1749,115 +1715,409 @@ fun GoogleContactsSyncSubPage(
 }
 
 // ==========================================
-// 9. TemplatesSubPage
+// 9. TemplatesSubPage & Interactive Message Format Studio
 // ==========================================
-// ==========================================
-// Custom visual transformation and text field for wildcard bubbles
-// ==========================================
-class BubbleVisualTransformation(private val appColors: AppThemeColors) : VisualTransformation {
+data class MessageBubbleTag(
+    val token: String,
+    val displayLabel: String,
+    val altTokens: List<String> = emptyList()
+)
+
+val MESSAGE_BUBBLE_TAGS = listOf(
+    MessageBubbleTag(token = "{customer}", displayLabel = "Name", altTokens = listOf("{name}")),
+    MessageBubbleTag(token = "{amount}", displayLabel = "Amount"),
+    MessageBubbleTag(token = "{balance}", displayLabel = "Balance"),
+    MessageBubbleTag(token = "{inst_amt}", displayLabel = "Instalment Amt"),
+    MessageBubbleTag(token = "{date}", displayLabel = "Date"),
+    MessageBubbleTag(token = "{business}", displayLabel = "Business Name"),
+    MessageBubbleTag(token = "{upi}", displayLabel = "UPI ID"),
+    MessageBubbleTag(token = "{upi_link}", displayLabel = "UPI Link")
+)
+
+/**
+ * VisualTransformation that hides raw `{` and `}` brackets inside the editor and renders
+ * each wildcard token as a clean highlighted bubble pill (e.g. ` Name `, ` UPI Link `).
+ */
+class CleanBubbleVisualTransformation(private val appColors: AppThemeColors) : VisualTransformation {
     override fun filter(text: AnnotatedString): TransformedText {
-        val builder = AnnotatedString.Builder()
-        builder.append(text.text)
-        
-        val wildcards = listOf("{customer}", "{name}", "{amount}", "{business}", "{upi}", "{upi_link}", "{balance}", "{inst_amt}", "{date}")
+        val raw = text.text
         val isDark = appColors.isDark
         val bubbleBg = if (isDark) Color(0xFF312E81) else Color(0xFFE0E7FF)
         val bubbleText = if (isDark) Color(0xFFC7D2FE) else Color(0xFF4F46E5)
-        
-        for (wildcard in wildcards) {
-            var index = text.text.indexOf(wildcard)
-            while (index != -1) {
-                builder.addStyle(
-                    style = SpanStyle(
-                        color = bubbleText,
-                        background = bubbleBg,
-                        fontWeight = FontWeight.Bold
-                    ),
-                    start = index,
-                    end = index + wildcard.length
-                )
-                index = text.text.indexOf(wildcard, index + 1)
+
+        val tokenLabelMap = linkedMapOf(
+            "{customer}" to " Name ",
+            "{name}" to " Name ",
+            "{amount}" to " Amount ",
+            "{balance}" to " Balance ",
+            "{inst_amt}" to " Instalment Amt ",
+            "{date}" to " Date ",
+            "{business}" to " Business Name ",
+            "{upi}" to " UPI ID ",
+            "{upi_link}" to " UPI Link "
+        )
+
+        data class TokenMatch(val start: Int, val end: Int, val replacement: String)
+        val matches = mutableListOf<TokenMatch>()
+
+        for ((token, label) in tokenLabelMap) {
+            var idx = raw.indexOf(token)
+            while (idx != -1) {
+                val endIdx = idx + token.length
+                if (matches.none { idx < it.end && endIdx > it.start }) {
+                    matches.add(TokenMatch(idx, endIdx, label))
+                }
+                idx = raw.indexOf(token, idx + 1)
             }
         }
-        
-        return TransformedText(builder.toAnnotatedString(), OffsetMapping.Identity)
+        matches.sortBy { it.start }
+
+        if (matches.isEmpty()) {
+            return TransformedText(text, OffsetMapping.Identity)
+        }
+
+        val builder = AnnotatedString.Builder()
+        val origToTrans = IntArray(raw.length + 1)
+        val transToOrigList = mutableListOf<Int>()
+
+        var rawCursor = 0
+        var transCursor = 0
+
+        for (m in matches) {
+            while (rawCursor < m.start) {
+                origToTrans[rawCursor] = transCursor
+                transToOrigList.add(rawCursor)
+                builder.append(raw[rawCursor])
+                rawCursor++
+                transCursor++
+            }
+            val spanStart = transCursor
+            for (i in m.start until m.end) {
+                origToTrans[i] = spanStart
+            }
+            for (ch in m.replacement) {
+                transToOrigList.add(m.start)
+                builder.append(ch)
+                transCursor++
+            }
+            builder.addStyle(
+                style = SpanStyle(
+                    color = bubbleText,
+                    background = bubbleBg,
+                    fontWeight = FontWeight.ExtraBold
+                ),
+                start = spanStart,
+                end = transCursor
+            )
+            rawCursor = m.end
+        }
+
+        while (rawCursor < raw.length) {
+            origToTrans[rawCursor] = transCursor
+            transToOrigList.add(rawCursor)
+            builder.append(raw[rawCursor])
+            rawCursor++
+            transCursor++
+        }
+        origToTrans[raw.length] = transCursor
+        transToOrigList.add(raw.length)
+
+        val offsetMapping = object : OffsetMapping {
+            override fun originalToTransformed(offset: Int): Int {
+                return origToTrans[offset.coerceIn(0, raw.length)]
+            }
+
+            override fun transformedToOriginal(offset: Int): Int {
+                if (transToOrigList.isEmpty()) return 0
+                return transToOrigList[offset.coerceIn(0, transToOrigList.lastIndex)]
+            }
+        }
+
+        return TransformedText(builder.toAnnotatedString(), offsetMapping)
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun BubbleTemplatesTextField(
+fun InteractiveMessageBubbleEditor(
     value: String,
     onValueChange: (String) -> Unit,
-    modifier: Modifier = Modifier,
+    language: String,
     appColors: AppThemeColors,
     textColor: Color,
-    cardBorder: Color
+    subTextColor: Color,
+    cardBorder: Color,
+    modifier: Modifier = Modifier
 ) {
-    var textFieldValueState by remember { mutableStateOf(TextFieldValue(text = value)) }
+    // Normalize any legacy `{name}` to `{customer}` so the single "Name" bubble governs it cleanly
+    val normalizedValue = remember(value) { value.replace("{name}", "{customer}") }
+    var textFieldValueState by remember {
+        mutableStateOf(TextFieldValue(text = normalizedValue, selection = TextRange(normalizedValue.length)))
+    }
 
-    LaunchedEffect(value) {
-        if (textFieldValueState.text != value) {
-            textFieldValueState = textFieldValueState.copy(
-                text = value,
-                selection = TextRange(value.length)
+    LaunchedEffect(normalizedValue) {
+        if (textFieldValueState.text != normalizedValue) {
+            val safeCursor = textFieldValueState.selection.start.coerceIn(0, normalizedValue.length)
+            textFieldValueState = TextFieldValue(
+                text = normalizedValue,
+                selection = TextRange(safeCursor)
             )
         }
     }
 
-    OutlinedTextField(
-        value = textFieldValueState,
-        onValueChange = { newValue ->
-            textFieldValueState = newValue
-            if (newValue.text != value) {
-                onValueChange(newValue.text)
+    val currentText = textFieldValueState.text
+
+    // Available bubbles (NOT currently inside the text box) vs Active bubbles (currently inside the text box)
+    val availableBubbles = remember(currentText) {
+        MESSAGE_BUBBLE_TAGS.filter { tag ->
+            !currentText.contains(tag.token) && tag.altTokens.none { currentText.contains(it) }
+        }
+    }
+    val activeBubbles = remember(currentText) {
+        MESSAGE_BUBBLE_TAGS.filter { tag ->
+            currentText.contains(tag.token) || tag.altTokens.any { currentText.contains(it) }
+        }
+    }
+
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        // 1. TOP BUBBLE TRAY: Available bubbles above the text box (tap to insert at cursor)
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(
+                    if (appColors.isDark) Color(0xFF0F172A) else Color(0xFFF8FAFC),
+                    RoundedCornerShape(10.dp)
+                )
+                .border(1.dp, cardBorder, RoundedCornerShape(10.dp))
+                .padding(10.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = translate("Tap a Bubble to Insert at Cursor:", language),
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = appColors.primaryAccent
+                )
+                Text(
+                    text = "${availableBubbles.size} available",
+                    fontSize = 10.sp,
+                    color = subTextColor
+                )
             }
-        },
-        shape = RoundedCornerShape(8.dp),
-        colors = OutlinedTextFieldDefaults.colors(
-            focusedTextColor = textColor,
-            unfocusedTextColor = textColor,
-            focusedLabelColor = textColor,
-            unfocusedLabelColor = textColor,
-            focusedPlaceholderColor = Color.DarkGray,
-            unfocusedPlaceholderColor = Color.DarkGray,
-            focusedBorderColor = appColors.primaryAccent,
-            unfocusedBorderColor = cardBorder
-        ),
-        visualTransformation = remember(appColors) { BubbleVisualTransformation(appColors) },
-        modifier = modifier
-            .onPreviewKeyEvent { event ->
-                if (event.type == KeyEventType.KeyDown && (event.key == Key.Backspace || event.nativeKeyEvent.keyCode == 67)) {
-                    val selection = textFieldValueState.selection
-                    if (selection.collapsed) {
-                        val cursor = selection.start
-                        val text = textFieldValueState.text
-                        val wildcards = listOf("{customer}", "{name}", "{amount}", "{business}", "{upi}", "{upi_link}", "{balance}", "{inst_amt}", "{date}")
-                        for (wildcard in wildcards) {
-                            var index = text.indexOf(wildcard)
-                            while (index != -1) {
-                                val start = index
-                                val end = index + wildcard.length
-                                if (cursor in (start + 1)..end) {
-                                    val newText = text.substring(0, start) + text.substring(end)
-                                    val newSelection = TextRange(start)
-                                    textFieldValueState = TextFieldValue(text = newText, selection = newSelection)
-                                    onValueChange(newText)
-                                    return@onPreviewKeyEvent true
+
+            if (availableBubbles.isEmpty()) {
+                Text(
+                    text = translate("All bubbles are placed in the message below. Tap any bubble inside the box to remove it.", language),
+                    fontSize = 11.sp,
+                    color = subTextColor
+                )
+            } else {
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    availableBubbles.forEach { tag ->
+                        Surface(
+                            onClick = {
+                                val raw = textFieldValueState.text
+                                val cursor = textFieldValueState.selection.start.coerceIn(0, raw.length)
+                                val prefix = raw.substring(0, cursor)
+                                val suffix = raw.substring(cursor)
+                                val needsLeadingSpace = prefix.isNotEmpty() && !prefix.last().isWhitespace()
+                                val needsTrailingSpace = suffix.isNotEmpty() && !suffix.first().isWhitespace() && suffix.first() !in listOf('.', ',', '!', '?', ':')
+                                val inserted = buildString {
+                                    if (needsLeadingSpace) append(" ")
+                                    append(tag.token)
+                                    if (needsTrailingSpace) append(" ")
                                 }
-                                index = text.indexOf(wildcard, index + 1)
+                                val newText = prefix + inserted + suffix
+                                val newCursor = (prefix.length + inserted.length).coerceIn(0, newText.length)
+                                textFieldValueState = TextFieldValue(
+                                    text = newText,
+                                    selection = TextRange(newCursor)
+                                )
+                                onValueChange(newText)
+                            },
+                            shape = RoundedCornerShape(18.dp),
+                            color = appColors.primaryAccent.copy(alpha = 0.12f),
+                            border = BorderStroke(1.dp, appColors.primaryAccent.copy(alpha = 0.5f))
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.AddCircleOutline,
+                                    contentDescription = null,
+                                    tint = appColors.primaryAccent,
+                                    modifier = Modifier.size(13.dp)
+                                )
+                                Text(
+                                    text = tag.displayLabel,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = appColors.primaryAccent
+                                )
                             }
                         }
                     }
                 }
-                false
+            }
+        }
+
+        // 2. FORMAT EDIT BOX: Tapping a bubble inside the box or in the active bar removes it back to top tray
+        OutlinedTextField(
+            value = textFieldValueState,
+            onValueChange = { newValue ->
+                val oldSelection = textFieldValueState.selection
+                val newSelection = newValue.selection
+                val textUnchanged = newValue.text == textFieldValueState.text
+
+                // If user tapped directly on a bubble inside the text box, remove that bubble and return it to the top tray
+                if (textUnchanged && newSelection.collapsed && newSelection != oldSelection) {
+                    val cursor = newSelection.start
+                    val raw = newValue.text
+                    for (tag in MESSAGE_BUBBLE_TAGS) {
+                        val tokensToCheck = listOf(tag.token) + tag.altTokens
+                        for (tok in tokensToCheck) {
+                            var idx = raw.indexOf(tok)
+                            while (idx != -1) {
+                                val tokEnd = idx + tok.length
+                                if (cursor in idx..tokEnd) {
+                                    val cleaned = (raw.substring(0, idx) + raw.substring(tokEnd)).replace("  ", " ")
+                                    val safePos = idx.coerceIn(0, cleaned.length)
+                                    textFieldValueState = TextFieldValue(text = cleaned, selection = TextRange(safePos))
+                                    onValueChange(cleaned)
+                                    return@OutlinedTextField
+                                }
+                                idx = raw.indexOf(tok, idx + 1)
+                            }
+                        }
+                    }
+                }
+
+                textFieldValueState = newValue
+                if (newValue.text != normalizedValue) {
+                    onValueChange(newValue.text)
+                }
             },
-        maxLines = 4
-    )
+            label = {
+                Text(
+                    text = translate("Message Format Box (Tap any bubble to remove)", language),
+                    fontSize = 11.sp
+                )
+            },
+            shape = RoundedCornerShape(10.dp),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedTextColor = textColor,
+                unfocusedTextColor = textColor,
+                focusedLabelColor = appColors.primaryAccent,
+                unfocusedLabelColor = subTextColor,
+                focusedBorderColor = appColors.primaryAccent,
+                unfocusedBorderColor = cardBorder
+            ),
+            visualTransformation = remember(appColors) { CleanBubbleVisualTransformation(appColors) },
+            modifier = Modifier
+                .fillMaxWidth()
+                .onPreviewKeyEvent { event ->
+                    if (event.type == KeyEventType.KeyDown && (event.key == Key.Backspace || event.nativeKeyEvent.keyCode == 67)) {
+                        val selection = textFieldValueState.selection
+                        if (selection.collapsed) {
+                            val cursor = selection.start
+                            val text = textFieldValueState.text
+                            for (tag in MESSAGE_BUBBLE_TAGS) {
+                                for (wildcard in (listOf(tag.token) + tag.altTokens)) {
+                                    var index = text.indexOf(wildcard)
+                                    while (index != -1) {
+                                        val start = index
+                                        val end = index + wildcard.length
+                                        if (cursor in (start + 1)..end) {
+                                            val newText = text.substring(0, start) + text.substring(end)
+                                            textFieldValueState = TextFieldValue(text = newText, selection = TextRange(start))
+                                            onValueChange(newText)
+                                            return@onPreviewKeyEvent true
+                                        }
+                                        index = text.indexOf(wildcard, index + 1)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    false
+                },
+            minLines = 4,
+            maxLines = 8
+        )
+
+        // 3. ACTIVE BUBBLES IN BOX (One-tap pill removal bar)
+        if (activeBubbles.isNotEmpty()) {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Text(
+                    text = translate("Bubbles Currently in Message (Tap to Exit Box):", language),
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = subTextColor
+                )
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    activeBubbles.forEach { tag ->
+                        Surface(
+                            onClick = {
+                                var updated = textFieldValueState.text
+                                (listOf(tag.token) + tag.altTokens).forEach { tok ->
+                                    updated = updated.replace(tok, "")
+                                }
+                                updated = updated.replace("  ", " ").trimStart()
+                                val newCursor = textFieldValueState.selection.start.coerceIn(0, updated.length)
+                                textFieldValueState = TextFieldValue(text = updated, selection = TextRange(newCursor))
+                                onValueChange(updated)
+                            },
+                            shape = RoundedCornerShape(16.dp),
+                            color = if (appColors.isDark) Color(0xFF312E81) else Color(0xFFE0E7FF),
+                            border = BorderStroke(1.dp, appColors.primaryAccent.copy(alpha = 0.4f))
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Text(
+                                    text = tag.displayLabel,
+                                    fontSize = 10.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (appColors.isDark) Color(0xFFC7D2FE) else Color(0xFF4F46E5)
+                                )
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Remove ${tag.displayLabel}",
+                                    tint = if (appColors.isDark) Color(0xFFC7D2FE) else Color(0xFF4F46E5),
+                                    modifier = Modifier.size(12.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
-// ==========================================
-// 9. TemplatesSubPage
-// ==========================================
 @Composable
 fun TemplatesSubPage(
     language: String,
@@ -1870,18 +2130,26 @@ fun TemplatesSubPage(
     smsReminderTemplate: String,
     whatsappReminderTemplate: String
 ) {
-    var showCustomerSmsSettings by remember { mutableStateOf(false) }
+    var showCustomerSmsSettings by rememberSaveable { mutableStateOf(false) }
+    var showMessageFormatList by rememberSaveable { mutableStateOf(false) }
+    var selectedMessagePatternIndex by rememberSaveable { mutableStateOf<Int?>(null) }
+
     val collectionGroups by viewModel.collectionGroups.collectAsStateWithLifecycle()
-    val daysList = remember(collectionGroups) { 
-        getOrderedDaysList(collectionGroups).filter { 
-            !it.equals("Friday", ignoreCase = true) && !it.equals("Home", ignoreCase = true) 
-        } 
+    val allCustomers by viewModel.allCustomers.collectAsStateWithLifecycle()
+    val allLoanCycles by viewModel.allLoanCycles.collectAsStateWithLifecycle()
+    val customAppName by viewModel.customAppName.collectAsStateWithLifecycle()
+    val upiId by viewModel.upiId.collectAsStateWithLifecycle()
+
+    val daysList = remember(collectionGroups) {
+        getOrderedDaysList(collectionGroups).filter {
+            !it.equals("Friday", ignoreCase = true) && !it.equals("Home", ignoreCase = true)
+        }
     }
-    var selectedSmsDay by remember { mutableStateOf("") }
+    var selectedSmsDay by rememberSaveable { mutableStateOf("") }
 
     LaunchedEffect(daysList) {
         if (selectedSmsDay.isBlank() && daysList.isNotEmpty()) {
-            selectedSmsDay = daysList.first()
+            selectedSmsDay = daysList.firstOrNull { it.equals("Monday", ignoreCase = true) } ?: daysList.first()
         }
     }
 
@@ -1956,12 +2224,10 @@ fun TemplatesSubPage(
                     }
                 }
 
-                // Customer list below
-                val allCustomers by viewModel.allCustomers.collectAsStateWithLifecycle()
                 val filteredCustomers = remember(allCustomers, selectedSmsDay) {
-                    allCustomers.filter { 
+                    allCustomers.filter {
                         it.collectionDay.trim().equals(selectedSmsDay.trim(), ignoreCase = true) &&
-                        it.phone.trim().isNotEmpty()
+                            it.phone.trim().isNotEmpty()
                     }.sortedBy { it.customOrder }
                 }
 
@@ -2000,13 +2266,13 @@ fun TemplatesSubPage(
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         Text(
-                                             text = "${customer.customOrder}. ${customer.name}",
-                                             fontWeight = FontWeight.Bold,
-                                             fontSize = 14.sp,
-                                             color = textColor,
-                                             maxLines = 1,
-                                             overflow = TextOverflow.Ellipsis,
-                                             modifier = Modifier.weight(1f)
+                                            text = "${customer.customOrder}. ${customer.name}",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 14.sp,
+                                            color = textColor,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f)
                                         )
                                         if (!customer.city.isNullOrBlank()) {
                                             Spacer(modifier = Modifier.width(8.dp))
@@ -2026,9 +2292,9 @@ fun TemplatesSubPage(
                                             }
                                         }
                                     }
-                                    
+
                                     Spacer(modifier = Modifier.height(8.dp))
-                                    
+
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
                                         horizontalArrangement = Arrangement.spacedBy(16.dp)
@@ -2063,7 +2329,7 @@ fun TemplatesSubPage(
                                                 color = subTextColor
                                             )
                                         }
-                                        
+
                                         Row(
                                             verticalAlignment = Alignment.CenterVertically,
                                             modifier = Modifier
@@ -2100,7 +2366,418 @@ fun TemplatesSubPage(
                         }
                     }
                 }
+            } else if (showMessageFormatList && selectedMessagePatternIndex != null) {
+                // =========================================================
+                // SPLIT LIVE PREVIEW & CURSOR-AWARE BUBBLE EDITOR
+                // =========================================================
+                val patternIdx = selectedMessagePatternIndex!!
+                val patternTitle = when (patternIdx) {
+                    0 -> "1. New Loan Confirmation SMS"
+                    1 -> "2. Entry Confirmation SMS"
+                    2 -> "3. Weekly SMS Reminder"
+                    else -> "4. Weekly WhatsApp Reminder"
+                }
+                val currentTemplateValue = when (patternIdx) {
+                    0 -> smsNewLoanTemplate
+                    1 -> smsPaymentTemplate
+                    2 -> smsReminderTemplate
+                    else -> whatsappReminderTemplate
+                }
+                val onUpdateTemplate: (String) -> Unit = { updated ->
+                    when (patternIdx) {
+                        0 -> viewModel.setSmsNewLoanTemplate(updated)
+                        1 -> viewModel.setSmsPaymentTemplate(updated)
+                        2 -> viewModel.setSmsReminderTemplate(updated)
+                        else -> viewModel.setWhatsappReminderTemplate(updated)
+                    }
+                }
+
+                // Header with Back to Pattern List
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    IconButton(onClick = { selectedMessagePatternIndex = null }) {
+                        Icon(
+                            imageVector = Icons.Default.ArrowBack,
+                            contentDescription = "Back to Message Formats",
+                            tint = textColor
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = translate(patternTitle, language),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp,
+                            color = textColor
+                        )
+                        Text(
+                            text = "Language: $currentTemplateLang",
+                            fontSize = 11.sp,
+                            color = appColors.primaryAccent,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+
+                HorizontalDivider(color = cardBorder)
+
+                // Language selector strip
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+                ) {
+                    val languages = listOf("English", "Tamil", "Hindi", "Telugu")
+                    languages.forEach { langItem ->
+                        val isSelected = langItem == currentTemplateLang
+                        Box(
+                            modifier = Modifier
+                                .background(
+                                    color = if (isSelected) appColors.primaryAccent else (if (isDark) Color(0xFF0F172A) else Color.White),
+                                    shape = RoundedCornerShape(16.dp)
+                                )
+                                .border(
+                                    width = 1.dp,
+                                    color = if (isSelected) appColors.primaryAccent else cardBorder,
+                                    shape = RoundedCornerShape(16.dp)
+                                )
+                                .clickable { viewModel.setTemplateLanguage(langItem) }
+                                .padding(horizontal = 12.dp, vertical = 5.dp)
+                        ) {
+                            Text(
+                                text = translate(langItem, language),
+                                color = if (isSelected) Color.White else textColor,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 11.sp
+                            )
+                        }
+                    }
+                }
+
+                // ---------------------------------------------------------
+                // TOP HALF: Day & Customer Dropdowns + Live Message Preview
+                // ---------------------------------------------------------
+                val defaultPreviewDay = remember(daysList) {
+                    daysList.firstOrNull { it.equals("Monday", ignoreCase = true) }
+                        ?: daysList.firstOrNull()
+                        ?: "Monday"
+                }
+                var previewDay by rememberSaveable { mutableStateOf(defaultPreviewDay) }
+                var dayDropdownExpanded by remember { mutableStateOf(false) }
+                var customerDropdownExpanded by remember { mutableStateOf(false) }
+
+                val dayCustomers = remember(allCustomers, previewDay) {
+                    allCustomers
+                        .filter { it.collectionDay.trim().equals(previewDay.trim(), ignoreCase = true) }
+                        .sortedBy { it.customOrder }
+                }
+
+                var selectedPreviewCustomerId by rememberSaveable(previewDay) {
+                    mutableStateOf(dayCustomers.firstOrNull()?.id ?: -1)
+                }
+
+                LaunchedEffect(dayCustomers) {
+                    if (dayCustomers.isNotEmpty() && dayCustomers.none { it.id == selectedPreviewCustomerId }) {
+                        selectedPreviewCustomerId = dayCustomers.first().id
+                    }
+                }
+
+                val previewCustomer = remember(dayCustomers, selectedPreviewCustomerId) {
+                    dayCustomers.find { it.id == selectedPreviewCustomerId } ?: dayCustomers.firstOrNull()
+                }
+                val previewLoan = remember(allLoanCycles, previewCustomer) {
+                    if (previewCustomer == null) null
+                    else allLoanCycles.filter { it.customerId == previewCustomer.id && it.status == "ACTIVE" }
+                        .maxByOrNull { it.id }
+                        ?: allLoanCycles.filter { it.customerId == previewCustomer.id }.maxByOrNull { it.id }
+                }
+
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (isDark) Color(0xFF0F172A) else Color(0xFFF0F9FF)
+                    ),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, appColors.primaryAccent.copy(alpha = 0.35f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Text(
+                            text = translate("Live Message Preview", language),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = appColors.primaryAccent
+                        )
+
+                        // Two Dropdowns side-by-side: 1. Day Dropdown, 2. Customer Dropdown
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            // Dropdown 1: Collection Day
+                            Box(modifier = Modifier.weight(0.45f)) {
+                                Surface(
+                                    onClick = { dayDropdownExpanded = true },
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = cardBg,
+                                    border = BorderStroke(1.dp, cardBorder),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text("Day", fontSize = 9.sp, color = subTextColor)
+                                            Text(
+                                                text = previewDay,
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = textColor,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+                                        Icon(
+                                            imageVector = Icons.Default.ArrowDropDown,
+                                            contentDescription = "Select Day",
+                                            tint = textColor,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+
+                                DropdownMenu(
+                                    expanded = dayDropdownExpanded,
+                                    onDismissRequest = { dayDropdownExpanded = false }
+                                ) {
+                                    daysList.forEach { d ->
+                                        DropdownMenuItem(
+                                            text = { Text(d, fontWeight = if (d == previewDay) FontWeight.Bold else FontWeight.Normal) },
+                                            onClick = {
+                                                previewDay = d
+                                                dayDropdownExpanded = false
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+
+                            // Dropdown 2: Customer from selected Day
+                            Box(modifier = Modifier.weight(0.55f)) {
+                                Surface(
+                                    onClick = { if (dayCustomers.isNotEmpty()) customerDropdownExpanded = true },
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = cardBg,
+                                    border = BorderStroke(1.dp, cardBorder),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text("Customer", fontSize = 9.sp, color = subTextColor)
+                                            Text(
+                                                text = previewCustomer?.let { "${it.customOrder}. ${it.name}" } ?: "Sample Customer",
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = textColor,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+                                        Icon(
+                                            imageVector = Icons.Default.ArrowDropDown,
+                                            contentDescription = "Select Customer",
+                                            tint = textColor,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+
+                                DropdownMenu(
+                                    expanded = customerDropdownExpanded,
+                                    onDismissRequest = { customerDropdownExpanded = false }
+                                ) {
+                                    dayCustomers.forEach { cust ->
+                                        DropdownMenuItem(
+                                            text = {
+                                                Text(
+                                                    text = "${cust.customOrder}. ${cust.name}",
+                                                    fontWeight = if (cust.id == previewCustomer?.id) FontWeight.Bold else FontWeight.Normal
+                                                )
+                                            },
+                                            onClick = {
+                                                selectedPreviewCustomerId = cust.id
+                                                customerDropdownExpanded = false
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        // Compute Live Formatted Message Preview for the selected Customer
+                        val livePreviewText = remember(
+                            currentTemplateValue,
+                            previewCustomer,
+                            previewLoan,
+                            customAppName,
+                            upiId,
+                            patternIdx
+                        ) {
+                            val cName = previewCustomer?.name ?: "Muneeswaran"
+                            val lTotal = if (previewLoan != null) (previewLoan.loanAmount + previewLoan.interestAmount) else 10000.0
+                            val lPaid = previewLoan?.paidAmount ?: 2000.0
+                            val lBal = maxOf(0.0, lTotal - lPaid)
+                            val lInst = previewLoan?.weeklyAmount ?: 1000.0
+                            val sampleAmt = if (patternIdx == 0) (previewLoan?.loanAmount ?: 10000.0) else lInst
+                            val bName = customAppName.ifBlank { "MD Finance" }
+                            val uId = upiId.ifBlank { "9440736893@ptyes" }
+                            val uLink = "upi://pay?pa=$uId&pn=${Uri.encode(bName)}&am=${sampleAmt.toLong()}&cu=INR"
+                            val todayStr = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date())
+
+                            currentTemplateValue
+                                .replace("{customer}", cName)
+                                .replace("{name}", cName)
+                                .replace("{amount}", sampleAmt.toLong().toString())
+                                .replace("{balance}", lBal.toLong().toString())
+                                .replace("{inst_amt}", lInst.toLong().toString())
+                                .replace("{date}", todayStr)
+                                .replace("{business}", bName)
+                                .replace("{upi}", uId)
+                                .replace("{upi_link}", uLink)
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(cardBg, RoundedCornerShape(10.dp))
+                                .border(1.dp, cardBorder, RoundedCornerShape(10.dp))
+                                .padding(12.dp)
+                        ) {
+                            Text(
+                                text = livePreviewText.ifBlank { "(Empty message format)" },
+                                fontSize = 13.sp,
+                                color = textColor,
+                                lineHeight = 19.sp
+                            )
+                        }
+                    }
+                }
+
+                // ---------------------------------------------------------
+                // BOTTOM HALF: Bubble Tray Above Format Box + Tap-to-Remove
+                // ---------------------------------------------------------
+                InteractiveMessageBubbleEditor(
+                    value = currentTemplateValue,
+                    onValueChange = onUpdateTemplate,
+                    language = language,
+                    appColors = appColors,
+                    textColor = textColor,
+                    subTextColor = subTextColor,
+                    cardBorder = cardBorder
+                )
+            } else if (showMessageFormatList) {
+                // =========================================================
+                // MESSAGE FORMAT PATTERN LIST (4 MESSAGE TYPES)
+                // =========================================================
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    IconButton(onClick = { showMessageFormatList = false }) {
+                        Icon(
+                            imageVector = Icons.Default.ArrowBack,
+                            contentDescription = "Back",
+                            tint = textColor
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = translate("Select Message Format Type", language),
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp,
+                        color = textColor
+                    )
+                }
+
+                HorizontalDivider(color = cardBorder)
+
+                Text(
+                    text = translate("Tap any message type below to open the Live Customer Preview and Bubble Format Editor:", language),
+                    fontSize = 11.sp,
+                    color = subTextColor
+                )
+
+                val patternCards = listOf(
+                    Triple(0, "1. New Loan Confirmation SMS", smsNewLoanTemplate),
+                    Triple(1, "2. Entry Confirmation SMS", smsPaymentTemplate),
+                    Triple(2, "3. Weekly SMS Reminder", smsReminderTemplate),
+                    Triple(3, "4. Weekly WhatsApp Reminder", whatsappReminderTemplate)
+                )
+
+                patternCards.forEach { (idx, title, rawTemplate) ->
+                    val readableSnippet = remember(rawTemplate) {
+                        var s = rawTemplate
+                        MESSAGE_BUBBLE_TAGS.forEach { tag ->
+                            s = s.replace(tag.token, "[${tag.displayLabel}]")
+                            tag.altTokens.forEach { alt -> s = s.replace(alt, "[${tag.displayLabel}]") }
+                        }
+                        s
+                    }
+                    Card(
+                        onClick = { selectedMessagePatternIndex = idx },
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (isDark) Color(0xFF0F172A) else Color(0xFFF8FAFC)
+                        ),
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, cardBorder),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(
+                                modifier = Modifier.weight(1f).padding(end = 8.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Text(
+                                    text = translate(title, language),
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.5.sp,
+                                    color = appColors.primaryAccent
+                                )
+                                Text(
+                                    text = readableSnippet,
+                                    fontSize = 11.5.sp,
+                                    color = subTextColor,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            Icon(
+                                imageVector = Icons.Default.ChevronRight,
+                                contentDescription = "Edit Format",
+                                tint = appColors.primaryAccent
+                            )
+                        }
+                    }
+                }
             } else {
+                // =========================================================
+                // MAIN MESSAGES & REMINDERS HOME VIEW
+                // =========================================================
                 // Outbound SMS Controls Toggle
                 Row(
                     modifier = Modifier
@@ -2159,145 +2836,30 @@ fun TemplatesSubPage(
                     )
                 }
 
-                HorizontalDivider(color = cardBorder)
-
-                Text(
-                     text = translate("Configure custom templates for SMS/WhatsApp confirmations and alerts. Use the dynamic wildcards listed below. They will be autoreplaced when sending:", language),
-                     fontSize = 11.sp,
-                     color = subTextColor
-                )
-
-                // List variables
-                val variables = listOf(
-                    "{customer}" to "Client's registration name ({name} is also supported)",
-                    "{amount}" to "Active payment / transaction amount",
-                    "{business}" to "My custom businesssignature tag",
-                    "{upi}" to "Configured business merchant UPI ID",
-                    "{upi_link}" to "Direct UPI pay link (QR Link / URI)",
-                    "{balance}" to "Remaining outstanding balance",
-                    "{inst_amt}" to "Standard collection installment amount",
-                    "{date}" to "Current formatted entry timestamp"
-                )
-
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                // Single "Message Format" Button (replaces cluttered static boxes)
+                Button(
+                    onClick = {
+                        selectedMessagePatternIndex = null
+                        showMessageFormatList = true
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0D9488)),
+                    shape = RoundedCornerShape(8.dp),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(if (isDark) Color(0xFF0F172A) else Color(0xFFF1F5F9), RoundedCornerShape(8.dp))
-                        .padding(10.dp)
+                        .testTag("message_format_studio_button")
                 ) {
-                    variables.forEach { (token, label) ->
-                        Row(
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text(
-                                text = translate(label, language),
-                                fontSize = 10.sp,
-                                color = subTextColor
-                            )
-                            Text(
-                                text = token,
-                                color = appColors.primaryAccent,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                fontFamily = FontFamily.Monospace
-                            )
-                        }
-                    }
-                }
-
-                HorizontalDivider(color = cardBorder)
-
-                Text(
-                    text = translate("Select Language for Custom Templates:", language),
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 13.sp,
-                    color = textColor
-                )
-
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
-                ) {
-                    val languages = listOf("English", "Tamil", "Hindi", "Telugu")
-                    languages.forEach { langItem ->
-                        val isSelected = langItem == currentTemplateLang
-                        Box(
-                            modifier = Modifier
-                                .background(
-                                    color = if (isSelected) appColors.primaryAccent else (if (isDark) Color(0xFF0F172A) else Color.White),
-                                    shape = RoundedCornerShape(16.dp)
-                                )
-                                .border(
-                                    width = 1.dp,
-                                    color = if (isSelected) appColors.primaryAccent else cardBorder,
-                                    shape = RoundedCornerShape(16.dp)
-                                )
-                                .clickable { viewModel.setTemplateLanguage(langItem) }
-                                .padding(horizontal = 14.dp, vertical = 6.dp)
-                        ) {
-                            Text(
-                                text = translate(langItem, language),
-                                color = if (isSelected) Color.White else textColor,
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 12.sp
-                            )
-                        }
-                    }
-                }
-
-                HorizontalDivider(color = cardBorder)
-
-                // New Loan Custom Area
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("1. New Loan Confirmation SMS Template", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = textColor)
-                    BubbleTemplatesTextField(
-                        value = smsNewLoanTemplate,
-                        onValueChange = { viewModel.setSmsNewLoanTemplate(it) },
-                        appColors = appColors,
-                        textColor = textColor,
-                        cardBorder = cardBorder,
-                        modifier = Modifier.fillMaxWidth()
+                    Icon(
+                        imageVector = Icons.Default.EditNote,
+                        contentDescription = "Message Format",
+                        tint = Color.White,
+                        modifier = Modifier.size(18.dp)
                     )
-                }
-
-                // Payment Confirmation Custom Area
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("2. Entry Confirmation SMS Template", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = textColor)
-                    BubbleTemplatesTextField(
-                        value = smsPaymentTemplate,
-                        onValueChange = { viewModel.setSmsPaymentTemplate(it) },
-                        appColors = appColors,
-                        textColor = textColor,
-                        cardBorder = cardBorder,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-
-                // SMS Reminder Custom Area
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("3. Weekly SMS Reminder Template", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = textColor)
-                    BubbleTemplatesTextField(
-                        value = smsReminderTemplate,
-                        onValueChange = { viewModel.setSmsReminderTemplate(it) },
-                        appColors = appColors,
-                        textColor = textColor,
-                        cardBorder = cardBorder,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-
-                // Whatsapp Reminder Custom Area
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("4. Weekly WhatsApp Reminder Template", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = textColor)
-                    BubbleTemplatesTextField(
-                        value = whatsappReminderTemplate,
-                        onValueChange = { viewModel.setWhatsappReminderTemplate(it) },
-                        appColors = appColors,
-                        textColor = textColor,
-                        cardBorder = cardBorder,
-                        modifier = Modifier.fillMaxWidth()
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = translate("Message Format (4 Message Types & Live Preview)", language),
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        fontSize = 13.sp
                     )
                 }
             }

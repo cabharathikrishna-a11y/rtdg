@@ -145,9 +145,9 @@ if (!envExampleFile.exists()) {
     envExampleFile.writeText("GEMINI_API_KEY=YOUR_GEMINI_API_KEY_HERE\n")
 }
 
-// Ensure google-services.json exists so Google Services plugin doesn't fail on CI/release builds if missing
+// Ensure google-services.json exists and does not contain placeholder remixed-project-id
 val googleServicesFile = file("${projectDir}/google-services.json")
-if (!googleServicesFile.exists()) {
+if (!googleServicesFile.exists() || googleServicesFile.readText().contains("remixed-project-id")) {
     googleServicesFile.writeText("""
 {
   "project_info": {
@@ -157,6 +157,21 @@ if (!googleServicesFile.exists()) {
     "storage_bucket": "collection-app-2007.firebasestorage.app"
   },
   "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:455008013486:android:531e28ee052201e9a5f13f",
+        "android_client_info": {
+          "package_name": "com.aistudio.weeklyfinance.jeymem"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBAuCr6O-bKtLFqUQag6N_DLTKP16NF5RQ"
+        }
+      ],
+      "services": {}
+    },
     {
       "client_info": {
         "mobilesdk_app_id": "1:455008013486:android:531e28ee052201e9a5f13f",
@@ -192,6 +207,7 @@ dependencies {
   // implementation(libs.firebase.perf)
   implementation(libs.firebase.appcheck)
   implementation("com.google.firebase:firebase-database")
+  implementation("com.google.firebase:firebase-firestore")
   implementation("com.google.firebase:firebase-storage")
   implementation("com.google.firebase:firebase-auth")
   implementation("com.google.firebase:firebase-inappmessaging-display")

@@ -70,11 +70,15 @@ object FirebaseConnectionManager {
     private const val TAG = "FirebaseConn"
     private val auth: FirebaseAuth by lazy { FirebaseAuth.getInstance() }
     private val database: FirebaseDatabase by lazy {
-        try {
+        val db = try {
             FirebaseDatabase.getInstance(SecureConfig.firebaseDatabaseUrl)
         } catch (e: Exception) {
             FirebaseDatabase.getInstance()
         }
+        try {
+            db.purgeOutstandingWrites()
+        } catch (_: Exception) {}
+        db
     }
 
     // Global flag to check if the background vault is unlocked
@@ -114,16 +118,13 @@ object FirebaseConnectionManager {
     }
 
     /**
-     * Offline Optimization: Tells Firebase to cache data locally on the tablet 
-     * chip so it can survive rural route drops seamlessly.
+     * Offline Optimization: Purges any legacy queued RTDB writes so WebSocket restoreState()
+     * never attempts to serialize oversized payloads into memory.
      */
     private fun enableKeepSynced() {
         try {
-            val uid = auth.currentUser?.uid ?: "anon_user"
-            database.getReference("users").child(uid).keepSynced(true)
-        } catch (e: Exception) {
-            Log.w(TAG, "Failed to set disk persistence properties: ${e.message}")
-        }
+            database.purgeOutstandingWrites()
+        } catch (_: Exception) {}
     }
 
     /**

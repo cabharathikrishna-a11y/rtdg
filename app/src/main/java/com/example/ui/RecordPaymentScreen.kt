@@ -552,6 +552,57 @@ fun RecordPaymentScreen(
                 Spacer(modifier = Modifier.height(8.dp))
             }
 
+            var pendingDuplicatePaymentData by remember { mutableStateOf<Triple<Double, Int, Pair<String, Long>>?>(null) }
+
+            if (pendingDuplicatePaymentData != null) {
+                val (dupAmt, dupWeek, notesAndDate) = pendingDuplicatePaymentData!!
+                AlertDialog(
+                    onDismissRequest = { pendingDuplicatePaymentData = null },
+                    containerColor = Color.White,
+                    titleContentColor = Color.Black,
+                    textContentColor = Color.Black,
+                    title = {
+                        Text(
+                            text = "Duplicate Entry Warning",
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFFEA580C)
+                        )
+                    },
+                    text = {
+                        Text(
+                            text = "A payment of ₹${CurrencyFormatter.format(dupAmt)} was already recorded for ${customer?.name ?: "this customer"} within the last 60 seconds. Do you want to record another identical entry?",
+                            fontSize = 13.sp,
+                            color = Color.Black
+                        )
+                    },
+                    confirmButton = {
+                        Button(
+                            onClick = {
+                                pendingDuplicatePaymentData = null
+                                viewModel.recordWeeklyPayment(
+                                    loanCycleId = loan.id,
+                                    amount = dupAmt,
+                                    weekNum = dupWeek,
+                                    notes = notesAndDate.first,
+                                    paymentDate = notesAndDate.second,
+                                    timeVerificationStatus = if (isTimeSynced) "VERIFIED" else "PENDING_TIME_VERIFICATION",
+                                    customSmsPhone = if (customer != null && customer.phone2.isNotBlank() && customer.smsConfirmationOfEntry) selectedSmsPhoneByUser else null
+                                )
+                                viewModel.navigateBack()
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEA580C))
+                        ) {
+                            Text("Record Anyway", color = Color.White, fontWeight = FontWeight.Bold)
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { pendingDuplicatePaymentData = null }) {
+                            Text("Cancel", color = ColorSlateDark, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                )
+            }
+
             Button(
                 onClick = {
                     val a = if (isMultipleMode) {
@@ -580,6 +631,9 @@ fun RecordPaymentScreen(
                         amountErrorText = "Please enter a valid amount greater than zero."
                     } else if (a > outstanding) {
                         amountErrorText = "Amount exceeds outstanding balance (₹${CurrencyFormatter.format(outstanding)})"
+                    } else if (viewModel.hasDuplicatePaymentInLast60Seconds(loan.id, a)) {
+                        amountErrorText = null
+                        pendingDuplicatePaymentData = Triple(a, w, finalNotes to parsedDate)
                     } else {
                         amountErrorText = null
                         viewModel.recordWeeklyPayment(

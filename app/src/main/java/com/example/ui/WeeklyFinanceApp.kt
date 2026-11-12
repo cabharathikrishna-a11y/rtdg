@@ -366,7 +366,15 @@ fun WeeklyFinanceApp(
     val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
-            // Auto sync features fully disabled
+            when (event) {
+                androidx.lifecycle.Lifecycle.Event.ON_START -> {
+                    com.example.network.CloudLedgerSyncEngine.updateDeviceOnlineStatus(context, true)
+                }
+                androidx.lifecycle.Lifecycle.Event.ON_STOP -> {
+                    com.example.network.CloudLedgerSyncEngine.updateDeviceOnlineStatus(context, false)
+                }
+                else -> {}
+            }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
@@ -403,12 +411,22 @@ fun WeeklyFinanceApp(
             fontScale = coercedFontScale
         )
     ) {
-        var showWelcomeSplash by remember { mutableStateOf(false) }
+        var showWelcomeSplash by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(true) }
+
+        LaunchedEffect(Unit) {
+            com.example.util.FestivalAndMilestoneHelper.refreshFestivalCalendarFromInternet(context)
+        }
 
         val isReconcilingMaster by viewModel.isReconcilingMaster.collectAsStateWithLifecycle()
         val reconciliationProgress by viewModel.reconciliationProgress.collectAsStateWithLifecycle()
 
-        if (isReconcilingMaster) {
+        if (showWelcomeSplash) {
+            WelcomeSplashScreen(
+                customAppName = customAppName,
+                customAppLogo = customAppLogo,
+                onDismiss = { showWelcomeSplash = false }
+            )
+        } else if (isReconcilingMaster) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -416,41 +434,13 @@ fun WeeklyFinanceApp(
                     .testTag("reconciliation_splash_screen"),
                 contentAlignment = Alignment.Center
             ) {
-                Column(
-                    modifier = Modifier.padding(24.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(20.dp)
-                ) {
-                    CircularProgressIndicator(
-                        color = colors.primaryAccent,
-                        strokeWidth = 4.dp,
-                        modifier = Modifier.size(56.dp).testTag("reconciliation_spinner")
-                    )
-                    
-                    Text(
-                        text = "MD Finance",
-                        fontSize = 24.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = Color.White,
-                        textAlign = TextAlign.Center
-                    )
-                    
-                    Text(
-                        text = reconciliationProgress,
-                        fontSize = 14.sp,
-                        color = Color.LightGray,
-                        textAlign = TextAlign.Center,
-                        fontWeight = FontWeight.Medium,
-                        modifier = Modifier.testTag("reconciliation_progress_text")
-                    )
-                }
+                AppLogoPulseLoader(
+                    customAppLogo = customAppLogo,
+                    title = customAppName.ifBlank { "MD Finance" },
+                    message = reconciliationProgress,
+                    isDarkBackground = true
+                )
             }
-        } else if (showWelcomeSplash) {
-            WelcomeSplashScreen(
-                customAppName = customAppName,
-                customAppLogo = customAppLogo,
-                onDismiss = { showWelcomeSplash = false }
-            )
         } else {
             val hasCompletedSetup by viewModel.hasCompletedDeviceSetup.collectAsStateWithLifecycle()
 
@@ -467,10 +457,14 @@ fun WeeklyFinanceApp(
 
             if (showUpdateDialog && (updateStatus == com.example.network.UpdateStatus.UPDATE_AVAILABLE || 
                                      updateStatus == com.example.network.UpdateStatus.DOWNLOADED)) {
+                val latestCode = com.example.network.FirebaseUpdateManager.latestVersionCode.value
                 AlertDialog(
-                    onDismissRequest = { /* Force update - cannot dismiss */ },
+                    onDismissRequest = {
+                        com.example.network.FirebaseUpdateManager.dismissUpdate(context, latestCode)
+                        showUpdateDialog = false
+                    },
                     properties = androidx.compose.ui.window.DialogProperties(
-                        dismissOnBackPress = false,
+                        dismissOnBackPress = true,
                         dismissOnClickOutside = false
                     ),
                     containerColor = Color.White,
@@ -512,7 +506,6 @@ fun WeeklyFinanceApp(
                                     modifier = Modifier.padding(12.dp).fillMaxWidth(),
                                     verticalArrangement = Arrangement.spacedBy(4.dp)
                                 ) {
-                                    val latestCode = if (updateStatus == com.example.network.UpdateStatus.UPDATE_AVAILABLE || updateStatus == com.example.network.UpdateStatus.DOWNLOADED) com.example.network.FirebaseUpdateManager.latestVersionCode.value else -1
                                     Text(
                                         text = "${translate("Latest Version", language)}: Build $latestCode",
                                         fontWeight = FontWeight.Bold,
@@ -534,13 +527,27 @@ fun WeeklyFinanceApp(
                             }
                         }
                     },
+                    dismissButton = {
+                        TextButton(
+                            onClick = {
+                                com.example.network.FirebaseUpdateManager.dismissUpdate(context, latestCode)
+                                showUpdateDialog = false
+                            }
+                        ) {
+                            Text(
+                                text = translate("Cancel", language),
+                                color = Color(0xFF64748B),
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    },
                     confirmButton = {
                         Button(
                             colors = ButtonDefaults.buttonColors(containerColor = colors.primaryAccent),
                             shape = RoundedCornerShape(8.dp),
                             onClick = {
                                 if (updateStatus == com.example.network.UpdateStatus.DOWNLOADED) {
-                                    com.example.network.FirebaseUpdateManager.triggerInstall(context, com.example.network.FirebaseUpdateManager.latestVersionCode.value)
+                                    com.example.network.FirebaseUpdateManager.triggerInstall(context, latestCode)
                                 } else {
                                     Toast.makeText(context, "Download is in progress. Installation will launch automatically when finished.", Toast.LENGTH_LONG).show()
                                 }
@@ -557,7 +564,7 @@ fun WeeklyFinanceApp(
             }
 
             if (!isLoggedIn) {
-                LoginScreen(viewModel = viewModel)
+                LoginScreen(viewModel = viewModel, onLoginSuccess = {})
             } else if (!hasCompletedSetup) {
                 DeviceSetupScreen(viewModel = viewModel)
             } else {
@@ -617,19 +624,21 @@ fun WeeklyFinanceApp(
                 }
             }
 
+            val settingsSubPage by viewModel.settingsSubPage.collectAsStateWithLifecycle()
+
             Scaffold(
                 topBar = {
-                    if (currentScreen !is Screen.CalculationDetail) {
+                    if (currentScreen !is Screen.CalculationDetail && currentScreen !is Screen.AiChat) {
                         TopAppBar(
                             title = {
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                                 ) {
                                     if (currentScreen is Screen.Dashboard) {
                                         AppLogoContainer(
                                             logoName = customAppLogo,
-                                            modifier = Modifier.size(24.dp),
+                                            modifier = Modifier.size(30.dp),
                                             tintColor = getLogoRealColor(customAppLogo)
                                         )
                                         Text(
@@ -650,7 +659,20 @@ fun WeeklyFinanceApp(
                                             is Screen.AddLoan -> "New Loan Cycle"
                                             is Screen.EditLoan -> "Edit Loan Cycle"
                                             is Screen.RecordPayment -> "Collect Instalment"
-                                            is Screen.Settings -> "Settings"
+                                            is Screen.Settings -> {
+                                                when (settingsSubPage) {
+                                                    "business_upi" -> "Business Profile & UPI Settings"
+                                                    "collection_days" -> "Collection Group Days"
+                                                    "templates" -> "Messages & Reminders"
+                                                    "theme" -> "App Theme & Fonts"
+                                                    "sync_backup" -> "Cloud Sync & Backups"
+                                                    "contacts_sync" -> "Google Contacts Sync"
+                                                    "ai_settings" -> "Easwar AI Settings"
+                                                    "troubleshooting" -> "System Troubleshooting"
+                                                    "system_updates" -> "Software Updates"
+                                                    else -> "Settings"
+                                                }
+                                            }
                                             is Screen.History -> "Activity History"
                                             is Screen.FullLedgerHistory -> "Daily Ledger History"
                                             is Screen.BulkEntry -> "Bulk Entry"
@@ -675,9 +697,11 @@ fun WeeklyFinanceApp(
                                 }
                             },
                             navigationIcon = {
-                                if (canGoBack) {
+                                if (canGoBack || (currentScreen is Screen.Settings && settingsSubPage != null)) {
                                     IconButton(onClick = {
-                                        if (currentScreen == Screen.Dashboard && activeDay != "Home") {
+                                        if (currentScreen is Screen.Settings && settingsSubPage != null) {
+                                            viewModel.setSettingsSubPage(null)
+                                        } else if (currentScreen == Screen.Dashboard && activeDay != "Home") {
                                             viewModel.selectDay("Home")
                                         } else {
                                             viewModel.navigateBack()
@@ -705,13 +729,18 @@ fun WeeklyFinanceApp(
                                         )
                                     }
                                 }
-                                // Dashboard Button option displayed everywhere
-                                IconButton(onClick = { viewModel.navigateToHome() }) {
-                                    Icon(
-                                        imageVector = Icons.Default.Home,
-                                        contentDescription = "Dashboard Button",
-                                        tint = Color.White
-                                    )
+                                // Hide Home button when already on Home dashboard
+                                if (!(currentScreen == Screen.Dashboard && activeDay == "Home")) {
+                                    IconButton(onClick = {
+                                        viewModel.setSettingsSubPage(null)
+                                        viewModel.navigateToHome()
+                                    }) {
+                                        Icon(
+                                            imageVector = Icons.Default.Home,
+                                            contentDescription = "Dashboard Button",
+                                            tint = Color.White
+                                        )
+                                    }
                                 }
                                 if (currentScreen == Screen.Dashboard) {
                                     val masterComparison by viewModel.masterComparison.collectAsStateWithLifecycle()
@@ -1081,82 +1110,207 @@ fun AppLogoContainer(
     tintColor: Color = Color.White
 ) {
     val context = LocalContext.current
-    if (logoName == "CUSTOM") {
-        val customBitmap = remember(logoName) {
-            val file = File(context.filesDir, "app_logo_custom.png")
-            if (file.exists()) {
-                try {
-                    BitmapFactory.decodeFile(file.absolutePath)?.asImageBitmap()
-                } catch (e: Exception) {
-                    null
-                }
-            } else null
-        }
-        if (customBitmap != null) {
-            Image(
-                bitmap = customBitmap,
-                contentDescription = "App Custom Logo",
-                modifier = modifier
-            )
-        } else {
-            Icon(
-                imageVector = Icons.Default.MonetizationOn,
-                contentDescription = "Fallback App Logo",
-                tint = tintColor,
-                modifier = modifier
-            )
-        }
-    } else {
-        Icon(
-            imageVector = getLogoIcon(logoName),
-            contentDescription = "App Logo",
-            tint = tintColor,
-            modifier = modifier
-        )
+    val customBitmap = remember(logoName) {
+        val file = File(context.filesDir, "app_logo_custom.png")
+        if (file.exists()) {
+            try {
+                BitmapFactory.decodeFile(file.absolutePath)?.asImageBitmap()
+            } catch (e: Exception) {
+                null
+            }
+        } else null
     }
-}@Composable
+    if (customBitmap != null) {
+        Image(
+            bitmap = customBitmap,
+            contentDescription = "Business Logo",
+            modifier = modifier.clip(CircleShape)
+        )
+    } else {
+        Box(
+            modifier = modifier.clip(CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Image(
+                painter = androidx.compose.ui.res.painterResource(id = com.example.R.drawable.ic_launcher_background),
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize()
+            )
+            Image(
+                painter = androidx.compose.ui.res.painterResource(id = com.example.R.drawable.ic_launcher_foreground),
+                contentDescription = "App Business Logo",
+                modifier = Modifier.fillMaxSize(1.15f)
+            )
+        }
+    }
+}
+@Composable
+fun AppLogoPulseLoader(
+    customAppLogo: String,
+    title: String = "MD Finance",
+    message: String = "Syncing with Cloud Ledger...",
+    isDarkBackground: Boolean = false,
+    modifier: Modifier = Modifier
+) {
+    val infiniteTransition = rememberInfiniteTransition(label = "logo_pulse_transition")
+    val pulseScale by infiniteTransition.animateFloat(
+        initialValue = 0.92f,
+        targetValue = 1.08f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 850, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "logo_scale"
+    )
+    val ringAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.25f,
+        targetValue = 0.75f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 850, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "ring_alpha"
+    )
+
+    Column(
+        modifier = modifier.padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .size(104.dp)
+                .graphicsLayer {
+                    scaleX = pulseScale
+                    scaleY = pulseScale
+                }
+                .testTag("reconciliation_spinner")
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(104.dp)
+                    .background(
+                        color = Color(0xFF4F46E5).copy(alpha = ringAlpha * 0.25f),
+                        shape = CircleShape
+                    )
+                    .border(2.5.dp, Color(0xFF4F46E5).copy(alpha = ringAlpha), CircleShape)
+            )
+            Box(
+                modifier = Modifier
+                    .size(84.dp)
+                    .background(Color.White, CircleShape)
+                    .border(2.dp, Color(0xFFE2E8F0), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                AppLogoContainer(
+                    logoName = customAppLogo,
+                    modifier = Modifier.size(56.dp),
+                    tintColor = getLogoRealColor(customAppLogo)
+                )
+            }
+        }
+
+        if (title.isNotBlank()) {
+            Text(
+                text = title,
+                fontSize = 22.sp,
+                fontWeight = FontWeight.ExtraBold,
+                color = if (isDarkBackground) Color.White else Color(0xFF0F172A),
+                textAlign = TextAlign.Center
+            )
+        }
+
+        if (message.isNotBlank()) {
+            Text(
+                text = message,
+                fontSize = 13.sp,
+                color = if (isDarkBackground) Color(0xFFCBD5E1) else Color(0xFF64748B),
+                textAlign = TextAlign.Center,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.testTag("reconciliation_progress_text")
+            )
+        }
+    }
+}
+
+@Composable
 fun WelcomeSplashScreen(
     customAppName: String,
     customAppLogo: String,
     onDismiss: () -> Unit
 ) {
-    LaunchedEffect(Unit) {
-        kotlinx.coroutines.delay(1000)
+    val context = LocalContext.current
+    val todayGreeting = remember {
+        com.example.util.FestivalAndMilestoneHelper.getTodayGreetingIfFirstOpenOfDay(context)
+    }
+
+    val infiniteTransition = rememberInfiniteTransition(label = "welcome_splash_anim")
+    val logoPulse by infiniteTransition.animateFloat(
+        initialValue = 0.95f,
+        targetValue = 1.06f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 900, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "welcome_logo_pulse"
+    )
+
+    LaunchedEffect(todayGreeting) {
+        if (todayGreeting != null) {
+            com.example.util.FestivalAndMilestoneHelper.markTodayGreetingShown(context)
+            kotlinx.coroutines.delay(4200)
+        } else {
+            kotlinx.coroutines.delay(3000)
+        }
         onDismiss()
     }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF0F172A)),
+            .background(Color(0xFF0F172A))
+            .clickable { onDismiss() },
         contentAlignment = Alignment.Center
     ) {
         Column(
-            modifier = Modifier.fillMaxSize().padding(24.dp),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.SpaceBetween
         ) {
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(
-                        brush = Brush.linearGradient(colors = listOf(Color(0xFF4F46E5), Color(0xFF10B981))),
-                        shape = RoundedCornerShape(12.dp)
-                    )
-                    .padding(horizontal = 24.dp, vertical = 12.dp)
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(
+                            brush = Brush.linearGradient(colors = listOf(Color(0xFF4F46E5), Color(0xFF10B981))),
+                            shape = RoundedCornerShape(14.dp)
+                        )
+                        .padding(horizontal = 24.dp, vertical = 12.dp)
+                ) {
+                    Text(
+                        text = "WELCOME MUNEESWARAN",
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Black,
+                        letterSpacing = 2.sp,
+                        color = Color.White,
+                        textAlign = TextAlign.Center
+                    )
+                }
+
                 Text(
-                    text = "WELCOME",
-                    fontSize = 28.sp,
-                    fontWeight = FontWeight.Black,
-                    letterSpacing = 4.sp,
-                    color = Color.White,
-                    modifier = Modifier.graphicsLayer {
-                        scaleX = 1f
-                        scaleY = 1f
-                    }
+                    text = "Let's get into the app",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color(0xFF93C5FD),
+                    letterSpacing = 0.8.sp
                 )
             }
 
@@ -1167,7 +1321,11 @@ fun WelcomeSplashScreen(
             ) {
                 Box(
                     modifier = Modifier
-                        .size(100.dp)
+                        .size(108.dp)
+                        .graphicsLayer {
+                            scaleX = logoPulse
+                            scaleY = logoPulse
+                        }
                         .background(
                             color = Color.White,
                             shape = CircleShape
@@ -1177,14 +1335,14 @@ fun WelcomeSplashScreen(
                 ) {
                     AppLogoContainer(
                         logoName = customAppLogo,
-                        modifier = Modifier.size(60.dp),
+                        modifier = Modifier.size(66.dp),
                         tintColor = getLogoRealColor(customAppLogo)
                     )
                 }
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(14.dp))
                 Text(
                     text = customAppName.uppercase(),
-                    fontSize = 18.sp,
+                    fontSize = 19.sp,
                     fontWeight = FontWeight.Black,
                     color = Color.White,
                     letterSpacing = 2.sp
@@ -1194,44 +1352,70 @@ fun WelcomeSplashScreen(
                     fontSize = 12.sp,
                     color = Color.LightGray
                 )
+
+                if (todayGreeting != null) {
+                    Spacer(modifier = Modifier.height(20.dp))
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = Color(todayGreeting.accentHex).copy(alpha = 0.18f)
+                        ),
+                        border = BorderStroke(1.5.dp, Color(todayGreeting.accentHex)),
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 18.dp, vertical = 14.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            if (todayGreeting.showIndianFlag) {
+                                com.example.util.IndianNationalFlagGraphic(
+                                    modifier = Modifier.size(width = 84.dp, height = 56.dp)
+                                )
+                            } else {
+                                Box(
+                                    modifier = Modifier
+                                        .background(Color(todayGreeting.accentHex).copy(alpha = 0.25f), RoundedCornerShape(12.dp))
+                                        .padding(horizontal = 10.dp, vertical = 4.dp)
+                                ) {
+                                    Text(
+                                        text = todayGreeting.badgeLabel,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = Color.White,
+                                        letterSpacing = 1.sp
+                                    )
+                                }
+                            }
+                            Text(
+                                text = todayGreeting.title,
+                                fontSize = 17.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = Color.White,
+                                textAlign = TextAlign.Center
+                            )
+                            Text(
+                                text = todayGreeting.subtitle,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = Color(0xFFE2E8F0),
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+                }
             }
 
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = 16.dp),
+                    .padding(bottom = 24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Row(
-                    modifier = Modifier.height(100.dp),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.Bottom
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.BackHand,
-                        contentDescription = "Left hand",
-                        tint = Color(0xFFFFC09F),
-                        modifier = Modifier
-                            .size(72.dp)
-                            .graphicsLayer {
-                                rotationZ = 45f + (0f)
-                                translationX = (0f) - 10f
-                            }
-                    )
-                    Icon(
-                        imageVector = Icons.Default.BackHand,
-                        contentDescription = "Right hand",
-                        tint = Color(0xFFFFC09F),
-                        modifier = Modifier
-                            .size(72.dp)
-                            .graphicsLayer {
-                                rotationZ = -45f - (0f)
-                                rotationY = 180f
-                                translationX = -((0f) - 10f)
-                            }
-                    )
-                }
-                Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = "Gaining Trust through Ledger Transparency",
                     fontSize = 11.sp,
@@ -1243,3 +1427,4 @@ fun WelcomeSplashScreen(
         }
     }
 }
+

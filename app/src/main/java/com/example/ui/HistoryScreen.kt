@@ -159,7 +159,7 @@ fun HistoryScreen(
                 modifier = Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                items(editLogs, key = { it.id }) { log ->
+                itemsIndexed(editLogs, key = { _, it -> it.id }) { idx, log ->
                     val customerExists = remember(allCustomers) { allCustomers.any { it.id == log.customerId } }
                     val deletedToastMsg = translate("Customer was deleted. Revert deletion to view profile.", language)
                     
@@ -181,91 +181,122 @@ fun HistoryScreen(
                         else -> Icons.Default.Edit
                     }
 
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                if (customerExists) {
-                                    viewModel.navigateTo(Screen.CustomerDetail(log.customerId))
-                                } else {
-                                    Toast.makeText(context, deletedToastMsg, Toast.LENGTH_LONG).show()
-                                }
-                            },
-                        colors = CardDefaults.cardColors(containerColor = cardBgColor),
-                        shape = RoundedCornerShape(12.dp),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-                        border = BorderStroke(1.dp, accentColor.copy(alpha = 0.15f))
-                    ) {
-                        Row(
+                    AnimatedSlideInItem(index = idx) {
+                        Card(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(12.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                                .clickable {
+                                    if (customerExists) {
+                                        viewModel.navigateTo(Screen.CustomerDetail(log.customerId))
+                                    } else {
+                                        Toast.makeText(context, deletedToastMsg, Toast.LENGTH_LONG).show()
+                                    }
+                                },
+                            colors = CardDefaults.cardColors(containerColor = cardBgColor),
+                            shape = RoundedCornerShape(12.dp),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                            border = BorderStroke(1.dp, accentColor.copy(alpha = 0.2f))
                         ) {
-                            Row(
+                            Column(
                                 modifier = Modifier
-                                    .weight(1f)
-                                    .padding(end = 8.dp),
-                                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                                    .fillMaxWidth()
+                                    .padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(36.dp)
-                                        .background(accentColor.copy(alpha = 0.1f), shape = RoundedCornerShape(8.dp)),
-                                    contentAlignment = Alignment.Center
+                                val parts = log.actionDescription.split(": ", limit = 2)
+                                // Top Row: Icon + Action Title + Revert Button
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.Top
                                 ) {
-                                    Icon(
-                                        imageVector = icon,
-                                        contentDescription = null,
-                                        tint = accentColor,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                }
-                                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                    val parts = log.actionDescription.split(": ")
-                                    if (parts.size > 1) {
+                                    Row(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .padding(end = 8.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(34.dp)
+                                                .background(accentColor.copy(alpha = 0.12f), shape = RoundedCornerShape(8.dp)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = icon,
+                                                contentDescription = null,
+                                                tint = accentColor,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
                                         Text(
                                             text = parts[0],
                                             fontSize = 13.sp,
                                             fontWeight = FontWeight.Bold,
-                                            color = Color.Black
+                                            color = Color.Black,
+                                            lineHeight = 17.sp,
+                                            modifier = Modifier.weight(1f)
                                         )
-                                        // Parse detailed change factors
-                                        val changeInfo = parts[1]
-                                        val factorsListString = changeInfo.substringAfter(")").trim()
-                                        val factorCount = changeInfo.substringBefore(")", "0").replace("(", "").trim()
-                                        
+                                    }
+
+                                    // Revert Button cleanly aligned at top-right
+                                    IconButton(
+                                        onClick = { viewModel.revertEditLog(log, context) },
+                                        modifier = Modifier
+                                            .size(32.dp)
+                                            .background(Color.White, shape = RoundedCornerShape(8.dp))
+                                            .border(1.dp, Color(0xFFCBD5E1), shape = RoundedCornerShape(8.dp))
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Refresh,
+                                            contentDescription = "Undo Action",
+                                            tint = Color.DarkGray,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                }
+
+                                // Middle Section: Change Factors / Details
+                                if (parts.size > 1) {
+                                    val changeInfo = parts[1]
+                                    val factorsListString = changeInfo.substringAfter(")").trim()
+                                    val factorCount = changeInfo.substringBefore(")", "0").replace("(", "").trim()
+
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .background(Color.White.copy(alpha = 0.65f), RoundedCornerShape(8.dp))
+                                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                                        verticalArrangement = Arrangement.spacedBy(3.dp)
+                                    ) {
                                         if (factorsListString.isNotEmpty()) {
-                                            Column(
-                                                modifier = Modifier.padding(top = 4.dp, bottom = 4.dp, start = 4.dp),
-                                                verticalArrangement = Arrangement.spacedBy(2.dp)
-                                            ) {
-                                                Text(
-                                                    text = "($factorCount)",
-                                                    fontSize = 11.sp,
-                                                    fontWeight = FontWeight.Medium,
-                                                    color = accentColor
-                                                )
-                                                factorsListString.split(", ").forEach { factor ->
-                                                     Row(
-                                                         verticalAlignment = Alignment.CenterVertically,
-                                                         horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                                     ) {
-                                                         Text(
-                                                             text = "•",
-                                                             fontSize = 12.sp,
-                                                             color = accentColor,
-                                                             fontWeight = FontWeight.Bold
-                                                         )
-                                                         Text(
-                                                             text = factor,
-                                                             fontSize = 12.sp,
-                                                             color = Color.DarkGray,
-                                                             fontWeight = FontWeight.Medium
-                                                         )
-                                                     }
+                                            Text(
+                                                text = "($factorCount)",
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = accentColor
+                                            )
+                                            factorsListString.split(", ").forEach { factor ->
+                                                Row(
+                                                    verticalAlignment = Alignment.Top,
+                                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                                    modifier = Modifier.fillMaxWidth()
+                                                ) {
+                                                    Text(
+                                                        text = "•",
+                                                        fontSize = 12.sp,
+                                                        color = accentColor,
+                                                        fontWeight = FontWeight.Bold
+                                                    )
+                                                    Text(
+                                                        text = factor,
+                                                        fontSize = 12.sp,
+                                                        color = Color.DarkGray,
+                                                        fontWeight = FontWeight.Medium,
+                                                        lineHeight = 16.sp,
+                                                        modifier = Modifier.weight(1f)
+                                                    )
                                                 }
                                             }
                                         } else {
@@ -273,32 +304,35 @@ fun HistoryScreen(
                                                 text = changeInfo,
                                                 fontSize = 12.sp,
                                                 color = Color.DarkGray,
-                                                fontWeight = FontWeight.Medium
+                                                fontWeight = FontWeight.Medium,
+                                                lineHeight = 16.sp
                                             )
                                         }
-                                    } else {
-                                        Text(
-                                            text = log.actionDescription,
-                                            fontSize = 13.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = Color.Black
-                                        )
                                     }
-                                    val isUnsynced = log.uuid in unsyncedUuids
-                                    val statusDotColor = when {
-                                        isUnsynced -> Color(0xFFEF4444) // Red
-                                        log.customerName == "Firebase Sync" || log.actionType == "SYNC_VERIFY" -> Color.Gray // Grey
-                                        else -> Color(0xFF22C55E) // Green
-                                    }
-                                    val statusText = when {
-                                        isUnsynced -> translate("Pending Sync", language)
-                                        log.customerName == "Firebase Sync" || log.actionType == "SYNC_VERIFY" -> translate("System Sync", language)
-                                        else -> translate("Synced", language)
-                                    }
+                                }
 
+                                // Bottom Row: Sync Status + Timestamp on Left, Action Link on Right
+                                val isUnsynced = log.uuid in unsyncedUuids
+                                val statusDotColor = when {
+                                    isUnsynced -> Color(0xFFEF4444)
+                                    log.customerName == "Firebase Sync" || log.actionType == "SYNC_VERIFY" -> Color.Gray
+                                    else -> Color(0xFF22C55E)
+                                }
+                                val statusText = when {
+                                    isUnsynced -> translate("Pending Sync", language)
+                                    log.customerName == "Firebase Sync" || log.actionType == "SYNC_VERIFY" -> translate("System Sync", language)
+                                    else -> translate("Synced", language)
+                                }
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
                                     Row(
                                         horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                        verticalAlignment = Alignment.CenterVertically
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.weight(1f)
                                     ) {
                                         Box(
                                             modifier = Modifier
@@ -306,43 +340,29 @@ fun HistoryScreen(
                                                 .background(statusDotColor, shape = androidx.compose.foundation.shape.CircleShape)
                                         )
                                         Text(
-                                            text = sdf.format(java.util.Date(log.timestamp)) + " • " + statusText,
-                                            fontSize = 11.sp,
-                                            color = Color.DarkGray
+                                            text = "${sdf.format(java.util.Date(log.timestamp))} • $statusText",
+                                            fontSize = 10.sp,
+                                            color = Color.DarkGray,
+                                            maxLines = 1
                                         )
-                                        if (customerExists) {
-                                            Text(
-                                                text = "• " + translate("View Profile", language),
-                                                fontSize = 11.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = appColors.primaryAccent
-                                            )
-                                        } else {
-                                            Text(
-                                                text = "• " + translate("Click Revert to Restore", language),
-                                                fontSize = 11.sp,
-                                                fontWeight = FontWeight.Medium,
-                                                color = Color.Red
-                                            )
-                                        }
+                                    }
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    if (customerExists) {
+                                        Text(
+                                            text = translate("View Profile", language),
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = appColors.primaryAccent
+                                        )
+                                    } else {
+                                        Text(
+                                            text = translate("Revert to Restore", language),
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = Color.Red
+                                        )
                                     }
                                 }
-                            }
-
-                            // Revert Button
-                            IconButton(
-                                onClick = { viewModel.revertEditLog(log, context) },
-                                modifier = Modifier
-                                    .size(32.dp)
-                                    .background(Color.White, shape = RoundedCornerShape(16.dp))
-                                    .border(1.dp, Color.LightGray, shape = RoundedCornerShape(16.dp))
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Refresh,
-                                    contentDescription = "Undo Action",
-                                    tint = Color.DarkGray,
-                                    modifier = Modifier.size(16.dp)
-                                )
                             }
                         }
                     }
@@ -736,7 +756,7 @@ fun FullLedgerHistoryScreen(viewModel: FinanceViewModel) {
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Text(
-                        text = translate("Total Dues Created", language),
+                        text = translate("Dues", language),
                         color = Color.White.copy(alpha = 0.7f),
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Medium
@@ -805,7 +825,7 @@ fun FullLedgerHistoryScreen(viewModel: FinanceViewModel) {
                         modifier = Modifier.weight(1.3f)
                     )
                     Text(
-                        text = translate("Collections", language),
+                        text = translate("Collect", language),
                         fontWeight = FontWeight.Bold,
                         fontSize = 11.sp,
                         color = Color(0xFF15803D),
@@ -813,7 +833,7 @@ fun FullLedgerHistoryScreen(viewModel: FinanceViewModel) {
                         modifier = Modifier.weight(1f)
                     )
                     Text(
-                        text = translate("Disbursed", language),
+                        text = translate("Given", language),
                         fontWeight = FontWeight.Bold,
                         fontSize = 11.sp,
                         color = Color(0xFF1D4ED8),
@@ -849,48 +869,52 @@ fun FullLedgerHistoryScreen(viewModel: FinanceViewModel) {
                 } else {
                     LazyColumn(modifier = Modifier.fillMaxSize()) {
                         itemsIndexed(filteredList) { idx, stats ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .background(if (idx % 2 == 1) Color(0xFFF8FAFC) else Color.White)
-                                    .padding(horizontal = 14.dp, vertical = 14.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = stats.dateLabel,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    color = Color.Black,
-                                    modifier = Modifier.weight(1.3f)
-                                )
-                                Text(
-                                    text = if (stats.collection > 0) "₹${CurrencyFormatter.format(stats.collection)}" else "—",
-                                    fontSize = 12.sp,
-                                    fontWeight = if (stats.collection > 0) FontWeight.Bold else FontWeight.Normal,
-                                    color = if (stats.collection > 0) Color(0xFF16A34A) else Color.Gray,
-                                    textAlign = TextAlign.End,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                Text(
-                                    text = if (stats.dueCreated > 0) "₹${CurrencyFormatter.format(stats.dueCreated)}" else "—",
-                                    fontSize = 12.sp,
-                                    fontWeight = if (stats.dueCreated > 0) FontWeight.Bold else FontWeight.Normal,
-                                    color = if (stats.dueCreated > 0) Color(0xFF2563EB) else Color.Gray,
-                                    textAlign = TextAlign.End,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                Text(
-                                    text = if (stats.interestCollected > 0) "₹${CurrencyFormatter.format(stats.interestCollected)}" else "—",
-                                    fontSize = 12.sp,
-                                    fontWeight = if (stats.interestCollected > 0) FontWeight.Bold else FontWeight.Normal,
-                                    color = if (stats.interestCollected > 0) Color(0xFF9333EA) else Color.Gray,
-                                    textAlign = TextAlign.End,
-                                    modifier = Modifier.weight(0.9f)
-                                )
-                            }
-                            if (idx < filteredList.size - 1) {
-                                HorizontalDivider(color = Color(0xFFF1F5F9), thickness = 0.5.dp)
+                            AnimatedSlideInItem(index = idx) {
+                                Column(modifier = Modifier.fillMaxWidth()) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .background(if (idx % 2 == 1) Color(0xFFF8FAFC) else Color.White)
+                                            .padding(horizontal = 14.dp, vertical = 14.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = stats.dateLabel,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = Color.Black,
+                                            modifier = Modifier.weight(1.3f)
+                                        )
+                                        Text(
+                                            text = if (stats.collection > 0) "₹${CurrencyFormatter.format(stats.collection)}" else "0",
+                                            fontSize = 12.sp,
+                                            fontWeight = if (stats.collection > 0) FontWeight.Bold else FontWeight.Normal,
+                                            color = if (stats.collection > 0) Color(0xFF16A34A) else Color.Gray,
+                                            textAlign = TextAlign.End,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        Text(
+                                            text = if (stats.dueCreated > 0) "₹${CurrencyFormatter.format(stats.dueCreated)}" else "0",
+                                            fontSize = 12.sp,
+                                            fontWeight = if (stats.dueCreated > 0) FontWeight.Bold else FontWeight.Normal,
+                                            color = if (stats.dueCreated > 0) Color(0xFF2563EB) else Color.Gray,
+                                            textAlign = TextAlign.End,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        Text(
+                                            text = if (stats.interestCollected > 0) "₹${CurrencyFormatter.format(stats.interestCollected)}" else "0",
+                                            fontSize = 12.sp,
+                                            fontWeight = if (stats.interestCollected > 0) FontWeight.Bold else FontWeight.Normal,
+                                            color = if (stats.interestCollected > 0) Color(0xFF9333EA) else Color.Gray,
+                                            textAlign = TextAlign.End,
+                                            modifier = Modifier.weight(0.9f)
+                                        )
+                                    }
+                                    if (idx < filteredList.size - 1) {
+                                        HorizontalDivider(color = Color(0xFFF1F5F9), thickness = 0.5.dp)
+                                    }
+                                }
                             }
                         }
                     }
